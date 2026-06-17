@@ -1,0 +1,35 @@
+[package]
+name = "femto-particles"
+version = "0.1.0"
+edition = "2024"
+description = "Data-driven CPU particle system with a wgpu renderer and an egui live editor"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+simple-vectors = "0.3.1"
+header-parsing = "0.3.1"
+wgpu = { version = "29", optional = true }
+bytemuck = { version = "1", optional = true, features = ["derive"] }
+winit = { version = "0.30", optional = true }
+egui = { version = "0.34", optional = true }
+egui-winit = { version = "0.34", optional = true }
+egui-wgpu = { version = "0.34", optional = true }
+pollster = { version = "0.4", optional = true }
+raw-window-handle = { version = "0.6", optional = true }
+
+[features]
+default = []
+render = ["dep:wgpu", "dep:bytemuck"]
+editor = [
+    "render",
+    "dep:winit",
+    "dep:egui",
+    "dep:egui-winit",
+    "dep:egui-wgpu",
+    "dep:pollster",
+    "dep:raw-window-handle",
+]
+
+[[bin]]
+name = "particle-editor"
+required-features = ["editor"]
