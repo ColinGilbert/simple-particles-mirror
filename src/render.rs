@@ -1,0 +1,341 @@
+use wgpu::util::DeviceExt;
+
+use crate::effect::{BlendMode, EffectDraw};
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct InstanceRaw {
+    position: [f32; 3],
+    size: f32,
+    color: [f32; 4],
+    rotation: f32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct CameraRaw {
+    view_projection: [[f32; 4]; 4],
+}
+
+struct Batch {
+    additive: bool,
+    start: u32,
+    count: u32,
+}
+
+const INSTANCE_LAYOUT: wgpu::VertexBufferLayout = wgpu::VertexBufferLayout {
+    array_stride: std::mem::size_of::<InstanceRaw>() as u64,
+    step_mode: wgpu::VertexStepMode::Instance,
+    attributes: &[
+        wgpu::VertexAttribute {
+            offset: 0,
+            shader_location: 0,
+            format: wgpu::VertexFormat::Float32x3,
+        },
+        wgpu::VertexAttribute {
+            offset: 12,
+            shader_location: 1,
+            format: wgpu::VertexFormat::Float32,
+        },
+        wgpu::VertexAttribute {
+            offset: 16,
+            shader_location: 2,
+            format: wgpu::VertexFormat::Float32x4,
+        },
+        wgpu::VertexAttribute {
+            offset: 32,
+            shader_location: 3,
+            format: wgpu::VertexFormat::Float32,
+        },
+    ],
+};
+
+pub struct ParticleRenderer {
+    alpha_pipeline: wgpu::RenderPipeline,
+    additive_pipeline: wgpu::RenderPipeline,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
+    texture_bind_group: wgpu::BindGroup,
+    instance_buffer: wgpu::Buffer,
+    instance_capacity: u64,
+    instances: Vec<InstanceRaw>,
+    batches: Vec<Batch>,
+}
+
+impl ParticleRenderer {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        surface_format: wgpu::TextureFormat,
+        depth_format: Option<wgpu::TextureFormat>,
+    ) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("particle_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("particle.wgsl").into()),
+        });
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("particle_camera_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("particle_camera_buffer"),
+            size: std::mem::size_of::<CameraRaw>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("particle_camera_bind_group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("particle_texture_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let circle_view = create_circle_texture(device, queue).create_view(&Default::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("particle_texture_bind_group"),
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&circle_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("particle_pipeline_layout"),
+            bind_group_layouts: &[
+                Some(&camera_bind_group_layout),
+                Some(&texture_bind_group_layout),
+            ],
+            immediate_size: 0,
+        });
+
+        let depth_stencil = depth_format.map(|format| wgpu::DepthStencilState {
+            format,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        });
+
+        let make_pipeline = |label: &str, blend: wgpu::BlendState| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vertex_main"),
+                    buffers: &[INSTANCE_LAYOUT],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fragment_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: surface_format,
+                        blend: Some(blend),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: depth_stencil.clone(),
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let alpha_pipeline =
+            make_pipeline("particle_alpha_pipeline", wgpu::BlendState::ALPHA_BLENDING);
+        let additive_pipeline = make_pipeline(
+            "particle_additive_pipeline",
+            wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::SrcAlpha,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Add,
+                },
+            },
+        );
+
+        let instance_capacity = 1024 * std::mem::size_of::<InstanceRaw>() as u64;
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("particle_instance_buffer"),
+            size: instance_capacity,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        Self {
+            alpha_pipeline,
+            additive_pipeline,
+            camera_buffer,
+            camera_bind_group,
+            texture_bind_group,
+            instance_buffer,
+            instance_capacity,
+            instances: Vec::new(),
+            batches: Vec::new(),
+        }
+    }
+
+    pub fn set_camera(&self, queue: &wgpu::Queue, view_projection: [[f32; 4]; 4]) {
+        queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::bytes_of(&CameraRaw { view_projection }),
+        );
+    }
+
+    pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, draws: &[EffectDraw]) {
+        self.instances.clear();
+        self.batches.clear();
+        for draw in draws {
+            let start = self.instances.len() as u32;
+            for particle in &draw.instances {
+                self.instances.push(InstanceRaw {
+                    position: particle.position,
+                    size: particle.size,
+                    color: particle.color,
+                    rotation: particle.rotation,
+                });
+            }
+            let count = self.instances.len() as u32 - start;
+            if count > 0 {
+                self.batches.push(Batch {
+                    additive: matches!(draw.blend, BlendMode::Additive),
+                    start,
+                    count,
+                });
+            }
+        }
+
+        if self.instances.is_empty() {
+            return;
+        }
+        let data: &[u8] = bytemuck::cast_slice(&self.instances);
+        let required = data.len() as u64;
+        if required > self.instance_capacity {
+            let new_capacity = required.next_power_of_two();
+            self.instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("particle_instance_buffer"),
+                size: new_capacity,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.instance_capacity = new_capacity;
+        }
+        queue.write_buffer(&self.instance_buffer, 0, data);
+    }
+
+    pub fn draw(&self, render_pass: &mut wgpu::RenderPass<'_>) {
+        if self.batches.is_empty() {
+            return;
+        }
+        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        render_pass.set_bind_group(1, &self.texture_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+        for batch in &self.batches {
+            let pipeline = if batch.additive {
+                &self.additive_pipeline
+            } else {
+                &self.alpha_pipeline
+            };
+            render_pass.set_pipeline(pipeline);
+            render_pass.draw(0..6, batch.start..batch.start + batch.count);
+        }
+    }
+}
+
+fn create_circle_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::Texture {
+    let size = 64_u32;
+    let center = size as f32 / 2.0;
+    let mut pixels = vec![0u8; (size * size * 4) as usize];
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f32 + 0.5 - center;
+            let dy = y as f32 + 0.5 - center;
+            let distance = dx.hypot(dy) / center;
+            let alpha = (1.0 - distance).clamp(0.0, 1.0);
+            let offset = ((y * size + x) * 4) as usize;
+            pixels[offset] = 255;
+            pixels[offset + 1] = 255;
+            pixels[offset + 2] = 255;
+            pixels[offset + 3] = (alpha * alpha * 255.0) as u8;
+        }
+    }
+    device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some("particle_circle_texture"),
+            size: wgpu::Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        },
+        wgpu::util::TextureDataOrder::LayerMajor,
+        &pixels,
+    )
+}
