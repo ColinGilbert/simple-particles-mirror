@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use egui_wgpu::ScreenDescriptor;
-use femto_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
-use femto_particles::{ParticleSystem, render::ParticleRenderer};
+use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
+use simple_particles::{ParticleSystem, render::ParticleRenderer};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -129,7 +129,7 @@ impl State {
     fn new(event_loop: &ActiveEventLoop) -> Self {
         let window = Arc::new(
             event_loop
-                .create_window(Window::default_attributes().with_title("femto-particles editor"))
+                .create_window(Window::default_attributes().with_title("simple-particles editor"))
                 .expect("window"),
         );
         let size = window.inner_size();
