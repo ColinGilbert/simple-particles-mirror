@@ -57,6 +57,8 @@ struct Editor {
     size_end: f32,
     color_start: [f32; 4],
     color_end: [f32; 4],
+    path: String,
+    status: String,
 }
 
 impl Editor {
@@ -67,6 +69,8 @@ impl Editor {
             size_end: 0.0,
             color_start: [1.0, 0.85, 0.4, 1.0],
             color_end: [1.0, 0.3, 0.1, 0.0],
+            path: "effect.particle".to_string(),
+            status: String::new(),
         };
         editor.effect.texture = "circle".to_string();
         editor.effect.blend = BlendMode::Additive;
@@ -88,6 +92,28 @@ impl Editor {
     fn rebuild(&mut self) {
         self.effect.size = Curve::linear(self.size_start, self.size_end);
         self.effect.color = Gradient::linear(self.color_start, self.color_end);
+    }
+
+    fn save(&mut self) {
+        match std::fs::write(&self.path, self.build_effect().to_string()) {
+            Ok(()) => self.status = format!("Gespeichert: {}", self.path),
+            Err(error) => self.status = format!("Speichern fehlgeschlagen: {error}"),
+        }
+    }
+
+    fn load(&mut self) {
+        match std::fs::read_to_string(&self.path) {
+            Ok(content) => {
+                let effect = ParticleEffect::parse(&content);
+                self.size_start = effect.size.sample(0.0);
+                self.size_end = effect.size.sample(1.0);
+                self.color_start = effect.color.sample(0.0);
+                self.color_end = effect.color.sample(1.0);
+                self.effect = effect;
+                self.status = format!("Geladen: {}", self.path);
+            }
+            Err(error) => self.status = format!("Laden fehlgeschlagen: {error}"),
+        }
     }
 
     fn build_effect(&self) -> ParticleEffect {
@@ -174,7 +200,11 @@ impl State {
         let renderer = ParticleRenderer::new(&device, &queue, format, None);
         let overlay = EguiOverlay::new(&device, format, &window);
 
-        let editor = Editor::default_editor();
+        let mut editor = Editor::default_editor();
+        if let Some(path) = std::env::args().nth(1) {
+            editor.path = path;
+            editor.load();
+        }
         let mut system = ParticleSystem::new();
         system.register(PREVIEW, editor.build_effect());
         system.spawn(PREVIEW, [0.0, 0.0, 0.0]);
@@ -349,6 +379,24 @@ fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
                         BlendMode::Alpha
                     };
                     changed = true;
+                }
+
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label("Datei");
+                    ui.text_edit_singleline(&mut editor.path);
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("Speichern").clicked() {
+                        editor.save();
+                    }
+                    if ui.button("Laden").clicked() {
+                        editor.load();
+                        changed = true;
+                    }
+                });
+                if !editor.status.is_empty() {
+                    ui.label(&editor.status);
                 }
             });
         });

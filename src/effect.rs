@@ -239,6 +239,106 @@ impl ParticleEffect {
     }
 }
 
+impl std::str::FromStr for ParticleEffect {
+    type Err = std::convert::Infallible;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        Ok(Self::parse(text))
+    }
+}
+
+impl std::fmt::Display for Curve {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, &[time, value]) in self.keys.iter().enumerate() {
+            if index > 0 {
+                write!(formatter, " ")?;
+            }
+            write!(formatter, "{time}:{value}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for Gradient {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, (time, color)) in self.keys.iter().enumerate() {
+            if index > 0 {
+                write!(formatter, " ")?;
+            }
+            write!(formatter, "{time}:{}", color_to_hex(*color))?;
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for ParticleEffect {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let blend = match self.blend {
+            BlendMode::Additive => "additive",
+            BlendMode::Alpha => "alpha",
+        };
+        writeln!(formatter, "texture {}", self.texture)?;
+        writeln!(formatter, "blend {blend}")?;
+        writeln!(formatter, "max_particles {}", self.max_particles)?;
+        writeln!(formatter, "loop {}", self.looping)?;
+        writeln!(formatter, "duration {}", self.duration)?;
+
+        writeln!(formatter, "\n# emit")?;
+        writeln!(formatter, "rate {}", self.rate)?;
+        if self.burst > 0 {
+            writeln!(formatter, "burst {}", self.burst)?;
+        }
+        match self.shape {
+            EmitterShape::Point => writeln!(formatter, "shape point")?,
+            EmitterShape::Sphere { radius } => {
+                writeln!(formatter, "shape sphere")?;
+                writeln!(formatter, "radius {radius}")?;
+            }
+            EmitterShape::Cone { radius, angle } => {
+                writeln!(formatter, "shape cone")?;
+                writeln!(formatter, "radius {radius}")?;
+                writeln!(formatter, "angle {angle}")?;
+            }
+            EmitterShape::Box { size: [x, y, z] } => {
+                writeln!(formatter, "shape box")?;
+                writeln!(formatter, "box_size {x} {y} {z}")?;
+            }
+        }
+
+        let [gravity_x, gravity_y, gravity_z]: [f32; 3] = self.gravity.into();
+        writeln!(formatter, "\n# life")?;
+        writeln!(
+            formatter,
+            "lifetime {} {}",
+            self.lifetime[0], self.lifetime[1]
+        )?;
+        writeln!(formatter, "speed {} {}", self.speed[0], self.speed[1])?;
+        writeln!(formatter, "gravity {gravity_x} {gravity_y} {gravity_z}")?;
+        writeln!(formatter, "drag {}", self.drag)?;
+
+        writeln!(formatter, "\n# size")?;
+        writeln!(formatter, "curve {}", self.size)?;
+
+        writeln!(formatter, "\n# color")?;
+        writeln!(formatter, "gradient {}", self.color)?;
+
+        writeln!(formatter, "\n# spin")?;
+        writeln!(formatter, "rate {} {}", self.spin[0], self.spin[1])?;
+        Ok(())
+    }
+}
+
+fn color_to_hex(color: [f32; 4]) -> String {
+    let byte = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+    format!(
+        "#{:02x}{:02x}{:02x}{:02x}",
+        byte(color[0]),
+        byte(color[1]),
+        byte(color[2]),
+        byte(color[3])
+    )
+}
+
 fn apply_field(effect: &mut ParticleEffect, section: &str, key: &str, value: &str) {
     match (section, key) {
         ("", "texture") => effect.texture = value.to_string(),
@@ -664,5 +764,25 @@ mod tests {
             system.update(1.0 / 60.0);
         }
         assert!(system.collect().is_empty());
+    }
+
+    #[test]
+    fn display_round_trips_through_parse() {
+        let original = ParticleEffect::parse(SAMPLE);
+        let reparsed = ParticleEffect::parse(&original.to_string());
+        assert_eq!(reparsed.texture, original.texture);
+        assert_eq!(reparsed.blend, original.blend);
+        assert_eq!(reparsed.max_particles, original.max_particles);
+        assert_eq!(reparsed.looping, original.looping);
+        assert_eq!(reparsed.lifetime, original.lifetime);
+        assert_eq!(reparsed.speed, original.speed);
+        assert_eq!(reparsed.spin, original.spin);
+        assert!((reparsed.size.sample(0.3) - original.size.sample(0.3)).abs() < 1e-3);
+        let original_color = original.color.sample(0.5);
+        let reparsed_color = reparsed.color.sample(0.5);
+        for channel in 0..4 {
+            assert!((reparsed_color[channel] - original_color[channel]).abs() < 0.01);
+        }
+        assert!(matches!(reparsed.shape, EmitterShape::Cone { .. }));
     }
 }
