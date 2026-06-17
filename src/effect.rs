@@ -41,6 +41,12 @@ impl Curve {
         }
     }
 
+    pub fn linear(start: f32, end: f32) -> Self {
+        Self {
+            keys: vec![[0.0, start], [1.0, end]],
+        }
+    }
+
     fn parse(value: &str) -> Self {
         let mut keys: Vec<[f32; 2]> = value
             .split_whitespace()
@@ -88,6 +94,12 @@ pub struct Gradient {
 }
 
 impl Gradient {
+    pub fn linear(start: [f32; 4], end: [f32; 4]) -> Self {
+        Self {
+            keys: vec![(0.0, start), (1.0, end)],
+        }
+    }
+
     fn constant(color: [f32; 4]) -> Self {
         Self {
             keys: vec![(0.0, color)],
@@ -547,6 +559,10 @@ impl ParticleSystem {
             active.emitter.update(effect, delta_time, active.origin);
             !active.emitter.finished()
         });
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.emitters.is_empty()
     }
 
     pub fn collect(&self) -> Vec<EffectDraw> {
