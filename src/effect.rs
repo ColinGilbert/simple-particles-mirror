@@ -26,8 +26,13 @@ pub enum BlendMode {
 pub enum EmitterShape {
     Point,
     Sphere { radius: f32 },
+    Hemisphere { radius: f32 },
     Cone { radius: f32, angle: f32 },
     Box { size: [f32; 3] },
+    Disc { radius: f32 },
+    Ring { radius: f32 },
+    Line { length: f32 },
+    Rect { size: [f32; 2] },
 }
 
 pub struct Curve {
@@ -303,6 +308,26 @@ impl std::fmt::Display for ParticleEffect {
                 writeln!(formatter, "shape box")?;
                 writeln!(formatter, "box_size {x} {y} {z}")?;
             }
+            EmitterShape::Hemisphere { radius } => {
+                writeln!(formatter, "shape hemisphere")?;
+                writeln!(formatter, "radius {radius}")?;
+            }
+            EmitterShape::Disc { radius } => {
+                writeln!(formatter, "shape disc")?;
+                writeln!(formatter, "radius {radius}")?;
+            }
+            EmitterShape::Ring { radius } => {
+                writeln!(formatter, "shape ring")?;
+                writeln!(formatter, "radius {radius}")?;
+            }
+            EmitterShape::Line { length } => {
+                writeln!(formatter, "shape line")?;
+                writeln!(formatter, "length {length}")?;
+            }
+            EmitterShape::Rect { size: [x, z] } => {
+                writeln!(formatter, "shape rect")?;
+                writeln!(formatter, "rect_size {x} {z}")?;
+            }
         }
 
         let [gravity_x, gravity_y, gravity_z]: [f32; 3] = self.gravity.into();
@@ -362,6 +387,17 @@ fn apply_field(effect: &mut ParticleEffect, section: &str, key: &str, value: &st
                 size: parse_vec3_array(value),
             }
         }
+        ("emit", "length") => {
+            effect.shape = EmitterShape::Line {
+                length: value.parse().unwrap_or(0.0),
+            }
+        }
+        ("emit", "rect_size") => {
+            let array = parse_vec3_array(value);
+            effect.shape = EmitterShape::Rect {
+                size: [array[0], array[1]],
+            }
+        }
         ("life", "lifetime") => effect.lifetime = parse_range(value),
         ("life", "speed") => effect.speed = parse_range(value),
         ("life", "gravity") => effect.gravity = Vec3::from(parse_vec3_array(value)),
@@ -376,18 +412,27 @@ fn apply_field(effect: &mut ParticleEffect, section: &str, key: &str, value: &st
 fn parse_shape(value: &str) -> EmitterShape {
     match value {
         "sphere" => EmitterShape::Sphere { radius: 0.0 },
+        "hemisphere" => EmitterShape::Hemisphere { radius: 0.0 },
         "cone" => EmitterShape::Cone {
             radius: 0.0,
             angle: 25.0,
         },
         "box" => EmitterShape::Box { size: [0.0; 3] },
+        "disc" => EmitterShape::Disc { radius: 0.0 },
+        "ring" => EmitterShape::Ring { radius: 0.0 },
+        "line" => EmitterShape::Line { length: 0.0 },
+        "rect" => EmitterShape::Rect { size: [0.0; 2] },
         _ => EmitterShape::Point,
     }
 }
 
 fn set_shape_radius(shape: &mut EmitterShape, value: f32) {
     match shape {
-        EmitterShape::Sphere { radius } | EmitterShape::Cone { radius, .. } => *radius = value,
+        EmitterShape::Sphere { radius }
+        | EmitterShape::Hemisphere { radius }
+        | EmitterShape::Cone { radius, .. }
+        | EmitterShape::Disc { radius }
+        | EmitterShape::Ring { radius } => *radius = value,
         _ => {}
     }
 }
@@ -578,6 +623,36 @@ impl Emitter {
                 let offset = Vec3::from([
                     (self.rng.unit() - 0.5) * size_x,
                     (self.rng.unit() - 0.5) * size_y,
+                    (self.rng.unit() - 0.5) * size_z,
+                ]);
+                (offset, up)
+            }
+            EmitterShape::Hemisphere { radius } => {
+                let mut direction = self.rng.direction();
+                direction[1] = direction[1].abs();
+                (direction * (radius * self.rng.unit()), direction)
+            }
+            EmitterShape::Disc { radius } => {
+                let azimuth = self.rng.unit() * std::f32::consts::TAU;
+                let distance = radius * self.rng.unit().sqrt();
+                let offset = Vec3::from([azimuth.cos() * distance, 0.0, azimuth.sin() * distance]);
+                (offset, up)
+            }
+            EmitterShape::Ring { radius } => {
+                let azimuth = self.rng.unit() * std::f32::consts::TAU;
+                let offset = Vec3::from([azimuth.cos() * radius, 0.0, azimuth.sin() * radius]);
+                (offset, up)
+            }
+            EmitterShape::Line { length } => {
+                let offset = Vec3::from([(self.rng.unit() - 0.5) * length, 0.0, 0.0]);
+                (offset, up)
+            }
+            EmitterShape::Rect {
+                size: [size_x, size_z],
+            } => {
+                let offset = Vec3::from([
+                    (self.rng.unit() - 0.5) * size_x,
+                    0.0,
                     (self.rng.unit() - 0.5) * size_z,
                 ]);
                 (offset, up)
@@ -784,5 +859,35 @@ mod tests {
             assert!((reparsed_color[channel] - original_color[channel]).abs() < 0.01);
         }
         assert!(matches!(reparsed.shape, EmitterShape::Cone { .. }));
+    }
+
+    #[test]
+    fn every_shape_round_trips() {
+        let shapes = [
+            EmitterShape::Point,
+            EmitterShape::Sphere { radius: 1.5 },
+            EmitterShape::Hemisphere { radius: 0.7 },
+            EmitterShape::Cone {
+                radius: 0.3,
+                angle: 30.0,
+            },
+            EmitterShape::Box {
+                size: [1.0, 2.0, 3.0],
+            },
+            EmitterShape::Disc { radius: 2.0 },
+            EmitterShape::Ring { radius: 1.25 },
+            EmitterShape::Line { length: 4.0 },
+            EmitterShape::Rect { size: [3.0, 5.0] },
+        ];
+        for shape in shapes {
+            let mut effect = ParticleEffect::parse("");
+            effect.shape = shape;
+            let reparsed = ParticleEffect::parse(&effect.to_string());
+            assert_eq!(
+                std::mem::discriminant(&reparsed.shape),
+                std::mem::discriminant(&shape),
+                "shape did not round-trip: {shape:?}"
+            );
+        }
     }
 }

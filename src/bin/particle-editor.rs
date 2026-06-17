@@ -384,6 +384,24 @@ fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
                 }
 
                 ui.separator();
+                ui.label("Emitter-Form");
+                let shape = &mut editor.effect.shape;
+                let current = shape_name(shape);
+                egui::ComboBox::from_id_salt("shape")
+                    .selected_text(current)
+                    .show_ui(ui, |ui| {
+                        for option in SHAPE_OPTIONS {
+                            if ui.selectable_label(current == option, option).clicked()
+                                && current != option
+                            {
+                                *shape = default_shape(option);
+                                changed = true;
+                            }
+                        }
+                    });
+                changed |= shape_params(ui, shape);
+
+                ui.separator();
                 ui.horizontal(|ui| {
                     ui.label("Datei");
                     ui.text_edit_singleline(&mut editor.path);
@@ -404,6 +422,99 @@ fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
         });
     if changed {
         editor.rebuild();
+    }
+    changed
+}
+
+const SHAPE_OPTIONS: [&str; 9] = [
+    "point",
+    "sphere",
+    "hemisphere",
+    "cone",
+    "box",
+    "disc",
+    "ring",
+    "line",
+    "rect",
+];
+
+fn shape_name(shape: &EmitterShape) -> &'static str {
+    match shape {
+        EmitterShape::Point => "point",
+        EmitterShape::Sphere { .. } => "sphere",
+        EmitterShape::Hemisphere { .. } => "hemisphere",
+        EmitterShape::Cone { .. } => "cone",
+        EmitterShape::Box { .. } => "box",
+        EmitterShape::Disc { .. } => "disc",
+        EmitterShape::Ring { .. } => "ring",
+        EmitterShape::Line { .. } => "line",
+        EmitterShape::Rect { .. } => "rect",
+    }
+}
+
+fn default_shape(name: &str) -> EmitterShape {
+    match name {
+        "sphere" => EmitterShape::Sphere { radius: 0.5 },
+        "hemisphere" => EmitterShape::Hemisphere { radius: 0.5 },
+        "cone" => EmitterShape::Cone {
+            radius: 0.2,
+            angle: 25.0,
+        },
+        "box" => EmitterShape::Box {
+            size: [1.0, 1.0, 1.0],
+        },
+        "disc" => EmitterShape::Disc { radius: 1.0 },
+        "ring" => EmitterShape::Ring { radius: 1.0 },
+        "line" => EmitterShape::Line { length: 2.0 },
+        "rect" => EmitterShape::Rect { size: [2.0, 2.0] },
+        _ => EmitterShape::Point,
+    }
+}
+
+fn shape_params(ui: &mut egui::Ui, shape: &mut EmitterShape) -> bool {
+    let mut changed = false;
+    match shape {
+        EmitterShape::Point => {}
+        EmitterShape::Sphere { radius }
+        | EmitterShape::Hemisphere { radius }
+        | EmitterShape::Disc { radius }
+        | EmitterShape::Ring { radius } => {
+            changed |= ui
+                .add(egui::Slider::new(radius, 0.0..=3.0).text("Radius"))
+                .changed();
+        }
+        EmitterShape::Cone { radius, angle } => {
+            changed |= ui
+                .add(egui::Slider::new(radius, 0.0..=3.0).text("Radius"))
+                .changed();
+            changed |= ui
+                .add(egui::Slider::new(angle, 0.0..=90.0).text("Winkel"))
+                .changed();
+        }
+        EmitterShape::Box { size } => {
+            changed |= ui
+                .add(egui::Slider::new(&mut size[0], 0.0..=5.0).text("Breite"))
+                .changed();
+            changed |= ui
+                .add(egui::Slider::new(&mut size[1], 0.0..=5.0).text("Höhe"))
+                .changed();
+            changed |= ui
+                .add(egui::Slider::new(&mut size[2], 0.0..=5.0).text("Tiefe"))
+                .changed();
+        }
+        EmitterShape::Line { length } => {
+            changed |= ui
+                .add(egui::Slider::new(length, 0.0..=8.0).text("Länge"))
+                .changed();
+        }
+        EmitterShape::Rect { size } => {
+            changed |= ui
+                .add(egui::Slider::new(&mut size[0], 0.0..=8.0).text("Breite"))
+                .changed();
+            changed |= ui
+                .add(egui::Slider::new(&mut size[1], 0.0..=8.0).text("Tiefe"))
+                .changed();
+        }
     }
     changed
 }
