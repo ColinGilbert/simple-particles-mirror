@@ -7,7 +7,7 @@ use egui_wgpu::ScreenDescriptor;
 use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
 use simple_particles::{EmitterId, ParticleSystem, render::ParticleRenderer};
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
@@ -15,7 +15,8 @@ const PREVIEW: &str = "preview";
 const PREVIEW_FOV: f32 = 45.0;
 const PREVIEW_DISTANCE: f32 = 5.0;
 const PREVIEW_TARGET_Y: f32 = 0.5;
-const PREVIEW_ORBIT_HEIGHT: f32 = 2.0;
+const PREVIEW_DEFAULT_YAW: f32 = 0.0;
+const PREVIEW_DEFAULT_PITCH: f32 = 0.35;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PreviewMotion {
@@ -68,14 +69,31 @@ impl ApplicationHandler for App {
         let Some(state) = self.state.as_mut() else {
             return;
         };
-        if state.overlay.handle_event(&state.window, &event) {
+        let consumed = state.overlay.handle_event(&state.window, &event);
+        if consumed {
             state.window.request_redraw();
         }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => state.resize(size.width, size.height),
+            WindowEvent::MouseInput {
+                state: element_state,
+                button: MouseButton::Left,
+                ..
+            } => {
+                state.rotating = element_state == ElementState::Pressed
+                    && !consumed
+                    && state.editor.motion_mode != PreviewMotion::MouseFollow;
+            }
             WindowEvent::CursorMoved { position, .. } => {
-                state.pointer = [position.x as f32, position.y as f32];
+                let pointer = [position.x as f32, position.y as f32];
+                if state.rotating {
+                    state.editor.yaw -= (pointer[0] - state.pointer[0]) * 0.01;
+                    state.editor.pitch = (state.editor.pitch
+                        + (pointer[1] - state.pointer[1]) * 0.01)
+                        .clamp(-1.4, 1.4);
+                }
+                state.pointer = pointer;
             }
             WindowEvent::RedrawRequested => state.render(),
             _ => {}
@@ -103,6 +121,8 @@ struct Editor {
     path: String,
     status: String,
     panel_open: bool,
+    yaw: f32,
+    pitch: f32,
 }
 
 impl Editor {
@@ -121,6 +141,8 @@ impl Editor {
             path: "effect.particle".to_string(),
             status: String::new(),
             panel_open: true,
+            yaw: PREVIEW_DEFAULT_YAW,
+            pitch: PREVIEW_DEFAULT_PITCH,
         };
         editor.effect.texture = "circle".to_string();
         editor.effect.blend = BlendMode::Additive;
@@ -198,7 +220,7 @@ struct State {
     system: ParticleSystem,
     overlay: EguiOverlay,
     editor: Editor,
-    orbit: f32,
+    rotating: bool,
     preview_id: EmitterId,
     motion_phase: f32,
     pointer: [f32; 2],
@@ -275,7 +297,7 @@ impl State {
             system,
             overlay,
             editor,
-            orbit: 0.0,
+            rotating: false,
             preview_id,
             motion_phase: 0.0,
             pointer: [0.0, 0.0],
@@ -313,10 +335,15 @@ impl State {
         let delta_time = (now - self.last_frame).as_secs_f32().min(0.1);
         self.last_frame = now;
 
-        if self.editor.motion_mode == PreviewMotion::MouseFollow {
-            self.orbit = 0.0;
-        } else {
-            self.orbit += delta_time * 0.4;
+        let mut changed = false;
+        let mut panel_width = 0.0;
+        let editor = &mut self.editor;
+        self.overlay.run(&self.window, |ui| {
+            (changed, panel_width) = build_ui(ui, editor);
+        });
+        self.panel_width = panel_width * self.window.scale_factor() as f32;
+        if changed {
+            self.system.register(PREVIEW, self.editor.build_effect());
         }
 
         let radius = 1.5_f32;
@@ -383,10 +410,12 @@ impl State {
         let eye = if self.editor.motion_mode == PreviewMotion::MouseFollow {
             [0.0, PREVIEW_TARGET_Y, PREVIEW_DISTANCE]
         } else {
+            let yaw = self.editor.yaw;
+            let pitch = self.editor.pitch;
             [
-                self.orbit.sin() * PREVIEW_DISTANCE,
-                PREVIEW_ORBIT_HEIGHT,
-                self.orbit.cos() * PREVIEW_DISTANCE,
+                PREVIEW_DISTANCE * pitch.cos() * yaw.sin(),
+                center[1] + PREVIEW_DISTANCE * pitch.sin(),
+                PREVIEW_DISTANCE * pitch.cos() * yaw.cos(),
             ]
         };
         let mut projection = perspective(PREVIEW_FOV.to_radians(), aspect, 0.1, 100.0);
@@ -439,16 +468,6 @@ impl State {
         }
         self.queue.submit(Some(encoder.finish()));
 
-        let mut changed = false;
-        let mut panel_width = 0.0;
-        let editor = &mut self.editor;
-        self.overlay.run(&self.window, |ui| {
-            (changed, panel_width) = build_ui(ui, editor);
-        });
-        self.panel_width = panel_width;
-        if changed {
-            self.system.register(PREVIEW, self.editor.build_effect());
-        }
         let commands = self
             .overlay
             .paint(&self.device, &self.queue, &frame.texture);
@@ -611,6 +630,13 @@ fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> (bool, f32) {
                     ui.label("Background");
                     ui.color_edit_button_rgb(&mut editor.background);
                 });
+                if editor.motion_mode != PreviewMotion::MouseFollow {
+                    ui.label("Drag the preview to orbit.");
+                    if ui.button("Reset view").clicked() {
+                        editor.yaw = PREVIEW_DEFAULT_YAW;
+                        editor.pitch = PREVIEW_DEFAULT_PITCH;
+                    }
+                }
             });
         });
     if changed {
