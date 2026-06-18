@@ -12,6 +12,10 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
 const PREVIEW: &str = "preview";
+const PREVIEW_FOV: f32 = 45.0;
+const PREVIEW_DISTANCE: f32 = 5.0;
+const PREVIEW_TARGET_Y: f32 = 0.5;
+const PREVIEW_ORBIT_HEIGHT: f32 = 2.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PreviewMotion {
@@ -98,6 +102,7 @@ struct Editor {
     background: [f32; 3],
     path: String,
     status: String,
+    panel_open: bool,
 }
 
 impl Editor {
@@ -115,6 +120,7 @@ impl Editor {
             background: [0.04, 0.05, 0.08],
             path: "effect.particle".to_string(),
             status: String::new(),
+            panel_open: true,
         };
         editor.effect.texture = "circle".to_string();
         editor.effect.blend = BlendMode::Additive;
@@ -197,6 +203,7 @@ struct State {
     motion_phase: f32,
     pointer: [f32; 2],
     follow_pos: [f32; 3],
+    panel_width: f32,
     last_frame: Instant,
 }
 
@@ -273,6 +280,7 @@ impl State {
             motion_phase: 0.0,
             pointer: [0.0, 0.0],
             follow_pos: [0.0, 0.0, 0.0],
+            panel_width: 0.0,
             last_frame: Instant::now(),
         }
     }
@@ -289,10 +297,15 @@ impl State {
     fn pointer_world(&self) -> [f32; 3] {
         let width = self.config.width.max(1) as f32;
         let height = self.config.height.max(1) as f32;
-        let ndc_x = (self.pointer[0] / width) * 2.0 - 1.0;
+        let ndc_x = (self.pointer[0] / width) * 2.0 - 1.0 - self.panel_width / width;
         let ndc_y = (self.pointer[1] / height) * 2.0 - 1.0;
-        let scale = 3.0;
-        [ndc_x * scale, 0.0, ndc_y * scale]
+        let half_height = PREVIEW_DISTANCE * (PREVIEW_FOV.to_radians() / 2.0).tan();
+        let half_width = half_height * (width / height);
+        [
+            ndc_x * half_width,
+            PREVIEW_TARGET_Y - ndc_y * half_height,
+            0.0,
+        ]
     }
 
     fn render(&mut self) {
@@ -366,11 +379,19 @@ impl State {
         }
 
         let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
-        let eye = [self.orbit.sin() * 5.0, 2.0, self.orbit.cos() * 5.0];
-        let view_projection = multiply(
-            perspective(45.0_f32.to_radians(), aspect, 0.1, 100.0),
-            look_at(eye, [0.0, 0.5, 0.0], [0.0, 1.0, 0.0]),
-        );
+        let center = [0.0, PREVIEW_TARGET_Y, 0.0];
+        let eye = if self.editor.motion_mode == PreviewMotion::MouseFollow {
+            [0.0, PREVIEW_TARGET_Y, PREVIEW_DISTANCE]
+        } else {
+            [
+                self.orbit.sin() * PREVIEW_DISTANCE,
+                PREVIEW_ORBIT_HEIGHT,
+                self.orbit.cos() * PREVIEW_DISTANCE,
+            ]
+        };
+        let mut projection = perspective(PREVIEW_FOV.to_radians(), aspect, 0.1, 100.0);
+        projection[2][0] = -self.panel_width / self.config.width.max(1) as f32;
+        let view_projection = multiply(projection, look_at(eye, center, [0.0, 1.0, 0.0]));
         self.renderer.set_camera(&self.queue, view_projection);
         let draws = self.system.collect();
         self.renderer.prepare(&self.device, &self.queue, &draws);
@@ -419,10 +440,12 @@ impl State {
         self.queue.submit(Some(encoder.finish()));
 
         let mut changed = false;
+        let mut panel_width = 0.0;
         let editor = &mut self.editor;
         self.overlay.run(&self.window, |ui| {
-            changed = build_ui(ui, editor);
+            (changed, panel_width) = build_ui(ui, editor);
         });
+        self.panel_width = panel_width;
         if changed {
             self.system.register(PREVIEW, self.editor.build_effect());
         }
@@ -436,13 +459,47 @@ impl State {
     }
 }
 
-fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
+fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> (bool, f32) {
     let mut changed = false;
-    egui::Panel::left("controls")
+    if !editor.panel_open {
+        egui::Area::new(egui::Id::new("reopen"))
+            .fixed_pos([8.0, 8.0])
+            .show(root.ctx(), |ui| {
+                if ui.button("☰").clicked() {
+                    editor.panel_open = true;
+                }
+            });
+        return (false, 0.0);
+    }
+    let panel = egui::Panel::left("controls")
         .default_size(280.0)
         .show_inside(root, |ui| {
-            ui.heading("simple-particles");
             egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.heading("File");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("×").clicked() {
+                            editor.panel_open = false;
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Path");
+                    ui.text_edit_singleline(&mut editor.path);
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        editor.save();
+                    }
+                    if ui.button("Load").clicked() {
+                        editor.load();
+                        changed = true;
+                    }
+                });
+                if !editor.status.is_empty() {
+                    ui.label(&editor.status);
+                }
+                ui.separator();
                 ui.heading("Parameters");
                 ui.label("Saved to the .particle file.");
                 {
@@ -554,31 +611,12 @@ fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
                     ui.label("Background");
                     ui.color_edit_button_rgb(&mut editor.background);
                 });
-
-                ui.separator();
-                ui.heading("File");
-                ui.horizontal(|ui| {
-                    ui.label("Path");
-                    ui.text_edit_singleline(&mut editor.path);
-                });
-                ui.horizontal(|ui| {
-                    if ui.button("Save").clicked() {
-                        editor.save();
-                    }
-                    if ui.button("Load").clicked() {
-                        editor.load();
-                        changed = true;
-                    }
-                });
-                if !editor.status.is_empty() {
-                    ui.label(&editor.status);
-                }
             });
         });
     if changed {
         editor.rebuild();
     }
-    changed
+    (changed, panel.response.rect.width())
 }
 
 const SHAPE_OPTIONS: [&str; 9] = [
