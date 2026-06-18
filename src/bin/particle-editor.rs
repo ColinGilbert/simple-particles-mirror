@@ -298,7 +298,9 @@ impl State {
         let delta_time = (now - self.last_frame).as_secs_f32().min(0.1);
         self.last_frame = now;
 
-        if self.editor.motion_mode != PreviewMotion::MouseFollow {
+        if self.editor.motion_mode == PreviewMotion::MouseFollow {
+            self.orbit = 0.0;
+        } else {
             self.orbit += delta_time * 0.4;
         }
 
