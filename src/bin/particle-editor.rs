@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use egui_wgpu::ScreenDescriptor;
 use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
-use simple_particles::{ParticleSystem, render::ParticleRenderer};
+use simple_particles::{EmitterId, ParticleSystem, render::ParticleRenderer};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -59,6 +59,7 @@ struct Editor {
     size_end: f32,
     color_start: [f32; 4],
     color_end: [f32; 4],
+    moving: bool,
     path: String,
     status: String,
 }
@@ -71,6 +72,7 @@ impl Editor {
             size_end: 0.0,
             color_start: [1.0, 0.85, 0.4, 1.0],
             color_end: [1.0, 0.3, 0.1, 0.0],
+            moving: false,
             path: "effect.particle".to_string(),
             status: String::new(),
         };
@@ -126,6 +128,7 @@ impl Editor {
         effect.looping = self.effect.looping;
         effect.duration = self.effect.duration;
         effect.rate = self.effect.rate;
+        effect.rate_distance = self.effect.rate_distance;
         effect.burst = self.effect.burst;
         effect.shape = self.effect.shape;
         effect.lifetime = self.effect.lifetime;
@@ -150,6 +153,8 @@ struct State {
     overlay: EguiOverlay,
     editor: Editor,
     orbit: f32,
+    preview_id: EmitterId,
+    motion_phase: f32,
     last_frame: Instant,
 }
 
@@ -209,7 +214,7 @@ impl State {
         }
         let mut system = ParticleSystem::new();
         system.register(PREVIEW, editor.build_effect());
-        system.spawn(PREVIEW, [0.0, 0.0, 0.0]);
+        let preview_id = system.spawn(PREVIEW, [0.0, 0.0, 0.0]);
 
         Self {
             window,
@@ -222,6 +227,8 @@ impl State {
             overlay,
             editor,
             orbit: 0.0,
+            preview_id,
+            motion_phase: 0.0,
             last_frame: Instant::now(),
         }
     }
@@ -241,9 +248,24 @@ impl State {
         self.last_frame = now;
 
         self.orbit += delta_time * 0.4;
+
+        let radius = 1.5_f32;
+        let omega = 2.0_f32;
+        let (origin, velocity) = if self.editor.moving {
+            self.motion_phase += omega * delta_time;
+            let (sin, cos) = self.motion_phase.sin_cos();
+            (
+                [cos * radius, 0.0, sin * radius],
+                [-sin * radius * omega, 0.0, cos * radius * omega],
+            )
+        } else {
+            ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        };
+        self.system
+            .set_emitter_motion(self.preview_id, origin, velocity);
         self.system.update(delta_time);
         if self.system.is_empty() {
-            self.system.spawn(PREVIEW, [0.0, 0.0, 0.0]);
+            self.preview_id = self.system.spawn(PREVIEW, origin);
         }
 
         let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
@@ -329,6 +351,12 @@ fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
                     .changed();
                 changed |= ui
                     .add(
+                        egui::Slider::new(&mut effect.rate_distance, 0.0..=200.0)
+                            .text("Rate/Distanz"),
+                    )
+                    .changed();
+                changed |= ui
+                    .add(
                         egui::Slider::new(&mut effect.lifetime[0], 0.05..=4.0).text("Lifetime min"),
                     )
                     .changed();
@@ -382,6 +410,7 @@ fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
                     };
                     changed = true;
                 }
+                ui.checkbox(&mut editor.moving, "Bewegte Vorschau (für Trails)");
 
                 ui.separator();
                 ui.label("Emitter-Form");
