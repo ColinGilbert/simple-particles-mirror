@@ -556,6 +556,7 @@ impl Emitter {
         delta_time: f32,
         origin: Vec3,
         velocity: Vec3,
+        wind: Vec3,
     ) {
         let was_fresh = self.age == 0.0;
         self.age += delta_time;
@@ -594,7 +595,7 @@ impl Emitter {
                 self.particles.swap_remove(index);
                 continue;
             }
-            particle.velocity += effect.gravity * delta_time;
+            particle.velocity += (effect.gravity + wind) * delta_time;
             particle.velocity *= drag;
             particle.position += particle.velocity * delta_time;
             particle.rotation += particle.spin * delta_time;
@@ -716,6 +717,7 @@ pub struct ParticleSystem {
     emitters: Vec<ActiveEmitter>,
     next_seed: u32,
     next_id: u64,
+    wind: Vec3,
 }
 
 impl Default for ParticleSystem {
@@ -731,7 +733,12 @@ impl ParticleSystem {
             emitters: Vec::new(),
             next_seed: 1,
             next_id: 1,
+            wind: Vec3::default(),
         }
+    }
+
+    pub fn set_wind(&mut self, wind: [f32; 3]) {
+        self.wind = Vec3::from(wind);
     }
 
     pub fn register(&mut self, name: &str, effect: ParticleEffect) {
@@ -767,13 +774,14 @@ impl ParticleSystem {
 
     pub fn update(&mut self, delta_time: f32) {
         let effects = &self.effects;
+        let wind = self.wind;
         self.emitters.retain_mut(|active| {
             let Some(effect) = effects.get(&active.effect) else {
                 return false;
             };
             active
                 .emitter
-                .update(effect, delta_time, active.origin, active.velocity);
+                .update(effect, delta_time, active.origin, active.velocity, wind);
             !active.emitter.finished()
         });
     }
@@ -849,14 +857,26 @@ mod tests {
         let mut emitter = Emitter::new(12345);
         let origin = Vec3::default();
         for _ in 0..30 {
-            emitter.update(&effect, 1.0 / 60.0, origin, Vec3::default());
+            emitter.update(
+                &effect,
+                1.0 / 60.0,
+                origin,
+                Vec3::default(),
+                Vec3::default(),
+            );
         }
         let mut render = Vec::new();
         emitter.render_into(&effect, &mut render);
         assert!(!render.is_empty());
         assert!(!emitter.finished());
         for _ in 0..120 {
-            emitter.update(&effect, 1.0 / 60.0, origin, Vec3::default());
+            emitter.update(
+                &effect,
+                1.0 / 60.0,
+                origin,
+                Vec3::default(),
+                Vec3::default(),
+            );
         }
         assert!(emitter.finished());
     }

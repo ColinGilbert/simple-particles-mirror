@@ -13,6 +13,35 @@ use winit::window::{Window, WindowId};
 
 const PREVIEW: &str = "preview";
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PreviewMotion {
+    Static,
+    Circle,
+    Line,
+    Figure8,
+    MouseFollow,
+}
+
+impl PreviewMotion {
+    const ALL: [PreviewMotion; 5] = [
+        PreviewMotion::Static,
+        PreviewMotion::Circle,
+        PreviewMotion::Line,
+        PreviewMotion::Figure8,
+        PreviewMotion::MouseFollow,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            PreviewMotion::Static => "Static",
+            PreviewMotion::Circle => "Circle",
+            PreviewMotion::Line => "Line",
+            PreviewMotion::Figure8 => "Figure-8",
+            PreviewMotion::MouseFollow => "Mouse-Follow",
+        }
+    }
+}
+
 fn main() {
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
@@ -41,6 +70,9 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => state.resize(size.width, size.height),
+            WindowEvent::CursorMoved { position, .. } => {
+                state.pointer = [position.x as f32, position.y as f32];
+            }
             WindowEvent::RedrawRequested => state.render(),
             _ => {}
         }
@@ -59,7 +91,10 @@ struct Editor {
     size_end: f32,
     color_start: [f32; 4],
     color_end: [f32; 4],
-    moving: bool,
+    motion_mode: PreviewMotion,
+    path_speed: f32,
+    follow_delay: f32,
+    wind: [f32; 2],
     path: String,
     status: String,
 }
@@ -72,7 +107,10 @@ impl Editor {
             size_end: 0.0,
             color_start: [1.0, 0.85, 0.4, 1.0],
             color_end: [1.0, 0.3, 0.1, 0.0],
-            moving: false,
+            motion_mode: PreviewMotion::Static,
+            path_speed: 1.0,
+            follow_delay: 0.15,
+            wind: [0.0, 0.0],
             path: "effect.particle".to_string(),
             status: String::new(),
         };
@@ -155,6 +193,8 @@ struct State {
     orbit: f32,
     preview_id: EmitterId,
     motion_phase: f32,
+    pointer: [f32; 2],
+    follow_pos: [f32; 3],
     last_frame: Instant,
 }
 
@@ -229,6 +269,8 @@ impl State {
             orbit: 0.0,
             preview_id,
             motion_phase: 0.0,
+            pointer: [0.0, 0.0],
+            follow_pos: [0.0, 0.0, 0.0],
             last_frame: Instant::now(),
         }
     }
@@ -242,27 +284,78 @@ impl State {
         self.surface.configure(&self.device, &self.config);
     }
 
+    fn pointer_world(&self) -> [f32; 3] {
+        let width = self.config.width.max(1) as f32;
+        let height = self.config.height.max(1) as f32;
+        let ndc_x = (self.pointer[0] / width) * 2.0 - 1.0;
+        let ndc_y = (self.pointer[1] / height) * 2.0 - 1.0;
+        let scale = 3.0;
+        [ndc_x * scale, 0.0, ndc_y * scale]
+    }
+
     fn render(&mut self) {
         let now = Instant::now();
         let delta_time = (now - self.last_frame).as_secs_f32().min(0.1);
         self.last_frame = now;
 
-        self.orbit += delta_time * 0.4;
+        if self.editor.motion_mode != PreviewMotion::MouseFollow {
+            self.orbit += delta_time * 0.4;
+        }
 
         let radius = 1.5_f32;
-        let omega = 2.0_f32;
-        let (origin, velocity) = if self.editor.moving {
-            self.motion_phase += omega * delta_time;
-            let (sin, cos) = self.motion_phase.sin_cos();
-            (
-                [cos * radius, 0.0, sin * radius],
-                [-sin * radius * omega, 0.0, cos * radius * omega],
-            )
-        } else {
-            ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        let omega = 2.0_f32 * self.editor.path_speed.max(0.0);
+        let (origin, motion_velocity) = match self.editor.motion_mode {
+            PreviewMotion::Static => ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
+            PreviewMotion::Circle => {
+                self.motion_phase += omega * delta_time;
+                let (sin, cos) = self.motion_phase.sin_cos();
+                (
+                    [cos * radius, 0.0, sin * radius],
+                    [-sin * radius * omega, 0.0, cos * radius * omega],
+                )
+            }
+            PreviewMotion::Line => {
+                self.motion_phase += omega * delta_time;
+                let (sin, cos) = self.motion_phase.sin_cos();
+                ([sin * radius, 0.0, 0.0], [cos * radius * omega, 0.0, 0.0])
+            }
+            PreviewMotion::Figure8 => {
+                self.motion_phase += omega * delta_time;
+                let (sin, cos) = self.motion_phase.sin_cos();
+                (
+                    [sin * radius, 0.0, sin * cos * radius],
+                    [
+                        cos * radius * omega,
+                        0.0,
+                        (cos * cos - sin * sin) * radius * omega,
+                    ],
+                )
+            }
+            PreviewMotion::MouseFollow => {
+                let target = self.pointer_world();
+                let alpha = (delta_time / self.editor.follow_delay.max(0.01)).min(1.0);
+                let mut next = self.follow_pos;
+                let mut velocity = [0.0; 3];
+                for axis in 0..3 {
+                    next[axis] += (target[axis] - next[axis]) * alpha;
+                    if delta_time > 1e-5 {
+                        velocity[axis] = (next[axis] - self.follow_pos[axis]) / delta_time;
+                    }
+                }
+                self.follow_pos = next;
+                (next, velocity)
+            }
         };
+
+        let wind = [self.editor.wind[0], 0.0, self.editor.wind[1]];
+        self.system.set_wind(wind);
+        let effective = [
+            motion_velocity[0] - wind[0],
+            motion_velocity[1] - wind[1],
+            motion_velocity[2] - wind[2],
+        ];
         self.system
-            .set_emitter_motion(self.preview_id, origin, velocity);
+            .set_emitter_motion(self.preview_id, origin, effective);
         self.system.update(delta_time);
         if self.system.is_empty() {
             self.preview_id = self.system.spawn(PREVIEW, origin);
@@ -410,10 +503,28 @@ fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
                     };
                     changed = true;
                 }
-                ui.checkbox(&mut editor.moving, "Bewegte Vorschau (für Trails)");
+                ui.separator();
+                ui.label("Preview motion");
+                egui::ComboBox::from_id_salt("motion")
+                    .selected_text(editor.motion_mode.label())
+                    .show_ui(ui, |ui| {
+                        for mode in PreviewMotion::ALL {
+                            ui.selectable_value(&mut editor.motion_mode, mode, mode.label());
+                        }
+                    });
+                if editor.motion_mode == PreviewMotion::MouseFollow {
+                    ui.add(
+                        egui::Slider::new(&mut editor.follow_delay, 0.01..=1.0)
+                            .text("Follow delay"),
+                    );
+                } else if editor.motion_mode != PreviewMotion::Static {
+                    ui.add(egui::Slider::new(&mut editor.path_speed, 0.0..=4.0).text("Path speed"));
+                }
+                ui.add(egui::Slider::new(&mut editor.wind[0], -8.0..=8.0).text("Wind X"));
+                ui.add(egui::Slider::new(&mut editor.wind[1], -8.0..=8.0).text("Wind Z"));
 
                 ui.separator();
-                ui.label("Emitter-Form");
+                ui.label("Emitter shape");
                 let shape = &mut editor.effect.shape;
                 let current = shape_name(shape);
                 egui::ComboBox::from_id_salt("shape")
