@@ -183,6 +183,7 @@ pub struct ParticleEffect {
     pub looping: bool,
     pub duration: f32,
     pub rate: f32,
+    pub rate_distance: f32,
     pub burst: u32,
     pub shape: EmitterShape,
     pub lifetime: [f32; 2],
@@ -210,6 +211,7 @@ impl ParticleEffect {
             looping: true,
             duration: 1.0,
             rate: 0.0,
+            rate_distance: 0.0,
             burst: 0,
             shape: EmitterShape::Point,
             lifetime: [1.0, 1.0],
@@ -290,6 +292,9 @@ impl std::fmt::Display for ParticleEffect {
 
         writeln!(formatter, "\n# emit")?;
         writeln!(formatter, "rate {}", self.rate)?;
+        if self.rate_distance > 0.0 {
+            writeln!(formatter, "rate_distance {}", self.rate_distance)?;
+        }
         if self.burst > 0 {
             writeln!(formatter, "burst {}", self.burst)?;
         }
@@ -378,6 +383,7 @@ fn apply_field(effect: &mut ParticleEffect, section: &str, key: &str, value: &st
         ("", "loop") => effect.looping = value == "true",
         ("", "duration") => effect.duration = value.parse().unwrap_or(1.0),
         ("emit", "rate") => effect.rate = value.parse().unwrap_or(0.0),
+        ("emit", "rate_distance") => effect.rate_distance = value.parse().unwrap_or(0.0),
         ("emit", "burst") => effect.burst = value.parse().unwrap_or(0),
         ("emit", "shape") => effect.shape = parse_shape(value),
         ("emit", "radius") => set_shape_radius(&mut effect.shape, value.parse().unwrap_or(0.0)),
@@ -518,6 +524,7 @@ pub struct ParticleRender {
 pub struct Emitter {
     particles: Vec<Particle>,
     spawn_accumulator: f32,
+    distance_accumulator: f32,
     age: f32,
     emitting: bool,
     rng: Rng,
@@ -528,6 +535,7 @@ impl Emitter {
         Self {
             particles: Vec::new(),
             spawn_accumulator: 0.0,
+            distance_accumulator: 0.0,
             age: 0.0,
             emitting: true,
             rng: Rng::new(seed),
@@ -542,7 +550,13 @@ impl Emitter {
         self.emitting = false;
     }
 
-    pub fn update(&mut self, effect: &ParticleEffect, delta_time: f32, origin: Vec3) {
+    pub fn update(
+        &mut self,
+        effect: &ParticleEffect,
+        delta_time: f32,
+        origin: Vec3,
+        velocity: Vec3,
+    ) {
         let was_fresh = self.age == 0.0;
         self.age += delta_time;
 
@@ -556,6 +570,13 @@ impl Emitter {
                 self.spawn_accumulator += effect.rate * delta_time;
                 while self.spawn_accumulator >= 1.0 {
                     self.spawn_accumulator -= 1.0;
+                    self.spawn(effect, origin);
+                }
+            }
+            if effect.rate_distance > 0.0 {
+                self.distance_accumulator += effect.rate_distance * length(velocity) * delta_time;
+                while self.distance_accumulator >= 1.0 {
+                    self.distance_accumulator -= 1.0;
                     self.spawn(effect, origin);
                 }
             }
@@ -679,16 +700,22 @@ pub struct EffectDraw {
     pub instances: Vec<ParticleRender>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EmitterId(u64);
+
 struct ActiveEmitter {
+    id: EmitterId,
     effect: String,
     emitter: Emitter,
     origin: Vec3,
+    velocity: Vec3,
 }
 
 pub struct ParticleSystem {
     effects: HashMap<String, ParticleEffect>,
     emitters: Vec<ActiveEmitter>,
     next_seed: u32,
+    next_id: u64,
 }
 
 impl Default for ParticleSystem {
@@ -703,6 +730,7 @@ impl ParticleSystem {
             effects: HashMap::new(),
             emitters: Vec::new(),
             next_seed: 1,
+            next_id: 1,
         }
     }
 
@@ -710,19 +738,31 @@ impl ParticleSystem {
         self.effects.insert(name.to_string(), effect);
     }
 
-    pub fn spawn(&mut self, name: &str, origin: [f32; 3]) {
+    pub fn spawn(&mut self, name: &str, origin: [f32; 3]) -> EmitterId {
+        let id = EmitterId(self.next_id);
+        self.next_id += 1;
         if !self.effects.contains_key(name) {
-            return;
+            return id;
         }
         self.next_seed = self
             .next_seed
             .wrapping_mul(1_664_525)
             .wrapping_add(1_013_904_223);
         self.emitters.push(ActiveEmitter {
+            id,
             effect: name.to_string(),
             emitter: Emitter::new(self.next_seed),
             origin: Vec3::from(origin),
+            velocity: Vec3::default(),
         });
+        id
+    }
+
+    pub fn set_emitter_motion(&mut self, id: EmitterId, origin: [f32; 3], velocity: [f32; 3]) {
+        if let Some(active) = self.emitters.iter_mut().find(|active| active.id == id) {
+            active.origin = Vec3::from(origin);
+            active.velocity = Vec3::from(velocity);
+        }
     }
 
     pub fn update(&mut self, delta_time: f32) {
@@ -731,7 +771,9 @@ impl ParticleSystem {
             let Some(effect) = effects.get(&active.effect) else {
                 return false;
             };
-            active.emitter.update(effect, delta_time, active.origin);
+            active
+                .emitter
+                .update(effect, delta_time, active.origin, active.velocity);
             !active.emitter.finished()
         });
     }
@@ -807,14 +849,14 @@ mod tests {
         let mut emitter = Emitter::new(12345);
         let origin = Vec3::default();
         for _ in 0..30 {
-            emitter.update(&effect, 1.0 / 60.0, origin);
+            emitter.update(&effect, 1.0 / 60.0, origin, Vec3::default());
         }
         let mut render = Vec::new();
         emitter.render_into(&effect, &mut render);
         assert!(!render.is_empty());
         assert!(!emitter.finished());
         for _ in 0..120 {
-            emitter.update(&effect, 1.0 / 60.0, origin);
+            emitter.update(&effect, 1.0 / 60.0, origin, Vec3::default());
         }
         assert!(emitter.finished());
     }
@@ -889,5 +931,36 @@ mod tests {
                 "shape did not round-trip: {shape:?}"
             );
         }
+    }
+
+    #[test]
+    fn moving_emitter_emits_only_with_velocity() {
+        let mut effect = ParticleEffect::parse("");
+        effect.rate_distance = 10.0;
+        effect.lifetime = [5.0, 5.0];
+        let mut system = ParticleSystem::new();
+        system.register("trail", effect);
+        let id = system.spawn("trail", [0.0, 0.0, 0.0]);
+
+        for _ in 0..20 {
+            system.update(1.0 / 60.0);
+        }
+        let resting = system.collect();
+        assert!(resting.iter().all(|draw| draw.instances.is_empty()));
+
+        for _ in 0..30 {
+            system.set_emitter_motion(id, [0.0, 0.0, 0.0], [5.0, 0.0, 0.0]);
+            system.update(1.0 / 60.0);
+        }
+        let moving = system.collect();
+        assert!(moving.iter().any(|draw| !draw.instances.is_empty()));
+    }
+
+    #[test]
+    fn rate_distance_round_trips() {
+        let mut effect = ParticleEffect::parse("");
+        effect.rate_distance = 12.5;
+        let reparsed = ParticleEffect::parse(&effect.to_string());
+        assert!((reparsed.rate_distance - 12.5).abs() < 1e-4);
     }
 }

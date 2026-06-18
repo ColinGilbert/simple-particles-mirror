@@ -4,6 +4,6 @@ pub mod effect;
 pub mod render;
 
 pub use effect::{
-    BlendMode, Curve, EffectDraw, Emitter, EmitterShape, Gradient, ParticleEffect, ParticleRender,
-    ParticleSystem,
+    BlendMode, Curve, EffectDraw, Emitter, EmitterId, EmitterShape, Gradient, ParticleEffect,
+    ParticleRender, ParticleSystem,
 };
