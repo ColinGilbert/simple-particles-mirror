@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Data-driven CPU particle system with a wgpu renderer and an egui live editor"
 license = "MIT OR Apache-2.0"
+repository = "https://gitlab.com/porky11/simple-particles"
 readme = "README.md"
 keywords = ["particles", "wgpu", "gamedev", "vfx", "egui"]
 categories = ["game-development", "rendering"]
