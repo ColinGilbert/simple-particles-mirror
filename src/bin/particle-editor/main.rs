@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod axes;
+mod textures;
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -196,6 +197,7 @@ impl Editor {
     fn build_effect(&self) -> ParticleEffect {
         let mut effect = ParticleEffect::parse("");
         effect.texture = self.effect.texture.clone();
+        effect.sheet = self.effect.sheet;
         effect.blend = self.effect.blend;
         effect.max_particles = self.effect.max_particles;
         effect.looping = self.effect.looping;
@@ -281,7 +283,16 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let renderer = ParticleRenderer::new(&device, &queue, format, None);
+        let mut renderer = ParticleRenderer::new(&device, &queue, format, None);
+        let (grid_pixels, grid_width, grid_height) = textures::grid_sheet();
+        renderer.register_texture(
+            &device,
+            &queue,
+            "grid",
+            &grid_pixels,
+            grid_width,
+            grid_height,
+        );
         let axes = AxisRenderer::new(&device, format);
         let overlay = EguiOverlay::new(&device, format, &window);
 
@@ -616,6 +627,38 @@ fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> (bool, f32) {
                     };
                     changed = true;
                 }
+                ui.label("Texture");
+                egui::ComboBox::from_id_salt("texture")
+                    .selected_text(&editor.effect.texture)
+                    .show_ui(ui, |ui| {
+                        for option in ["circle", "grid"] {
+                            if ui
+                                .selectable_label(editor.effect.texture == option, option)
+                                .clicked()
+                                && editor.effect.texture != option
+                            {
+                                editor.effect.texture = option.to_string();
+                                changed = true;
+                            }
+                        }
+                    });
+                ui.horizontal(|ui| {
+                    ui.label("Sheet");
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut editor.effect.sheet[0])
+                                .range(1..=16)
+                                .prefix("cols "),
+                        )
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut editor.effect.sheet[1])
+                                .range(1..=16)
+                                .prefix("rows "),
+                        )
+                        .changed();
+                });
                 ui.label("Emitter shape");
                 let shape = &mut editor.effect.shape;
                 let current = shape_name(shape);

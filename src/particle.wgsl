@@ -15,6 +15,8 @@ struct Instance {
     @location(1) size: f32,
     @location(2) color: vec4<f32>,
     @location(3) rotation: f32,
+    @location(4) life: f32,
+    @location(5) sheet: vec2<f32>,
 }
 
 struct VertexOutput {
@@ -56,9 +58,21 @@ fn vertex_main(@builtin(vertex_index) vertex_index: u32, instance: Instance) -> 
         + right * rotated.x * instance.size
         + up * rotated.y * instance.size;
 
+    let columns = max(instance.sheet.x, 1.0);
+    let rows = max(instance.sheet.y, 1.0);
+    let frame_count = columns * rows;
+    let frame = floor(min(instance.life, 0.999) * frame_count);
+    let column = frame - floor(frame / columns) * columns;
+    let row = floor(frame / columns);
+    let cell = corner + vec2<f32>(0.5, 0.5);
+    let sheet_uv = vec2<f32>(
+        (column + cell.x) / columns,
+        (row + 1.0 - cell.y) / rows,
+    );
+
     var output: VertexOutput;
     output.clip_position = camera.view_projection * vec4<f32>(world_pos, 1.0);
-    output.uv = corner + vec2<f32>(0.5, 0.5);
+    output.uv = sheet_uv;
     output.color = instance.color;
     return output;
 }

@@ -178,6 +178,7 @@ fn parse_hex_color(text: &str) -> Option<[f32; 4]> {
 
 pub struct ParticleEffect {
     pub texture: String,
+    pub sheet: [u32; 2],
     pub blend: BlendMode,
     pub max_particles: usize,
     pub looping: bool,
@@ -206,6 +207,7 @@ impl ParticleEffect {
         let mut path = Vec::new();
         let mut effect = Self {
             texture: String::new(),
+            sheet: [1, 1],
             blend: BlendMode::Alpha,
             max_particles: 256,
             looping: true,
@@ -285,6 +287,9 @@ impl std::fmt::Display for ParticleEffect {
             BlendMode::Alpha => "alpha",
         };
         writeln!(formatter, "texture {}", self.texture)?;
+        if self.sheet != [1, 1] {
+            writeln!(formatter, "sheet {} {}", self.sheet[0], self.sheet[1])?;
+        }
         writeln!(formatter, "blend {blend}")?;
         writeln!(formatter, "max_particles {}", self.max_particles)?;
         writeln!(formatter, "loop {}", self.looping)?;
@@ -372,6 +377,12 @@ fn color_to_hex(color: [f32; 4]) -> String {
 fn apply_field(effect: &mut ParticleEffect, section: &str, key: &str, value: &str) {
     match (section, key) {
         ("", "texture") => effect.texture = value.to_string(),
+        ("", "sheet") => {
+            let mut parts = value.split_whitespace();
+            let columns = parts.next().and_then(|part| part.parse().ok()).unwrap_or(1);
+            let rows = parts.next().and_then(|part| part.parse().ok()).unwrap_or(1);
+            effect.sheet = [columns.max(1), rows.max(1)];
+        }
         ("", "blend") => {
             effect.blend = if value == "additive" {
                 BlendMode::Additive
@@ -519,6 +530,7 @@ pub struct ParticleRender {
     pub color: [f32; 4],
     pub size: f32,
     pub rotation: f32,
+    pub life: f32,
 }
 
 pub struct Emitter {
@@ -690,6 +702,7 @@ impl Emitter {
                 color: effect.color.sample(life),
                 size: effect.size.sample(life),
                 rotation: particle.rotation,
+                life,
             });
         }
     }
@@ -697,6 +710,7 @@ impl Emitter {
 
 pub struct EffectDraw {
     pub texture: String,
+    pub sheet: [u32; 2],
     pub blend: BlendMode,
     pub instances: Vec<ParticleRender>,
 }
@@ -805,6 +819,7 @@ impl ParticleSystem {
                 let effect = self.effects.get(name)?;
                 Some(EffectDraw {
                     texture: effect.texture.clone(),
+                    sheet: effect.sheet,
                     blend: effect.blend,
                     instances,
                 })
@@ -982,5 +997,14 @@ mod tests {
         effect.rate_distance = 12.5;
         let reparsed = ParticleEffect::parse(&effect.to_string());
         assert!((reparsed.rate_distance - 12.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn sheet_round_trips() {
+        let mut effect = ParticleEffect::parse("");
+        assert_eq!(effect.sheet, [1, 1]);
+        effect.sheet = [4, 2];
+        let reparsed = ParticleEffect::parse(&effect.to_string());
+        assert_eq!(reparsed.sheet, [4, 2]);
     }
 }

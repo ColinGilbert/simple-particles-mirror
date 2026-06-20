@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use wgpu::util::DeviceExt;
 
 use crate::effect::{BlendMode, EffectDraw};
@@ -9,6 +11,8 @@ struct InstanceRaw {
     size: f32,
     color: [f32; 4],
     rotation: f32,
+    life: f32,
+    sheet: [f32; 2],
 }
 
 #[repr(C)]
@@ -19,6 +23,7 @@ struct CameraRaw {
 
 struct Batch {
     additive: bool,
+    texture: String,
     start: u32,
     count: u32,
 }
@@ -47,6 +52,16 @@ const INSTANCE_LAYOUT: wgpu::VertexBufferLayout = wgpu::VertexBufferLayout {
             shader_location: 3,
             format: wgpu::VertexFormat::Float32,
         },
+        wgpu::VertexAttribute {
+            offset: 36,
+            shader_location: 4,
+            format: wgpu::VertexFormat::Float32,
+        },
+        wgpu::VertexAttribute {
+            offset: 40,
+            shader_location: 5,
+            format: wgpu::VertexFormat::Float32x2,
+        },
     ],
 };
 
@@ -55,7 +70,9 @@ pub struct ParticleRenderer {
     additive_pipeline: wgpu::RenderPipeline,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    texture_bind_group: wgpu::BindGroup,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    textures: HashMap<String, wgpu::BindGroup>,
     instance_buffer: wgpu::Buffer,
     instance_capacity: u64,
     instances: Vec<InstanceRaw>,
@@ -126,26 +143,19 @@ impl ParticleRenderer {
                 ],
             });
 
-        let circle_view = create_circle_texture(device, queue).create_view(&Default::default());
+        let circle_view = create_circle_texture(device, queue)
+            .create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("particle_texture_bind_group"),
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&circle_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
+        let mut textures = HashMap::new();
+        for name in ["", "circle"] {
+            let bind_group =
+                make_texture_bind_group(device, &texture_bind_group_layout, &sampler, &circle_view);
+            textures.insert(name.to_string(), bind_group);
+        }
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("particle_pipeline_layout"),
@@ -226,7 +236,9 @@ impl ParticleRenderer {
             additive_pipeline,
             camera_buffer,
             camera_bind_group,
-            texture_bind_group,
+            texture_bind_group_layout,
+            sampler,
+            textures,
             instance_buffer,
             instance_capacity,
             instances: Vec::new(),
@@ -247,18 +259,22 @@ impl ParticleRenderer {
         self.batches.clear();
         for draw in draws {
             let start = self.instances.len() as u32;
+            let sheet = [draw.sheet[0].max(1) as f32, draw.sheet[1].max(1) as f32];
             for particle in &draw.instances {
                 self.instances.push(InstanceRaw {
                     position: particle.position,
                     size: particle.size,
                     color: particle.color,
                     rotation: particle.rotation,
+                    life: particle.life,
+                    sheet,
                 });
             }
             let count = self.instances.len() as u32 - start;
             if count > 0 {
                 self.batches.push(Batch {
                     additive: matches!(draw.blend, BlendMode::Additive),
+                    texture: draw.texture.clone(),
                     start,
                     count,
                 });
@@ -287,19 +303,83 @@ impl ParticleRenderer {
         if self.batches.is_empty() {
             return;
         }
+        let Some(fallback) = self.textures.get("") else {
+            return;
+        };
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_pass.set_bind_group(1, &self.texture_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
         for batch in &self.batches {
+            let texture = self.textures.get(&batch.texture).unwrap_or(fallback);
             let pipeline = if batch.additive {
                 &self.additive_pipeline
             } else {
                 &self.alpha_pipeline
             };
             render_pass.set_pipeline(pipeline);
+            render_pass.set_bind_group(1, texture, &[]);
             render_pass.draw(0..6, batch.start..batch.start + batch.count);
         }
     }
+
+    pub fn register_texture(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        name: &str,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+    ) {
+        let texture = device.create_texture_with_data(
+            queue,
+            &wgpu::TextureDescriptor {
+                label: Some("particle_texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            rgba,
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = make_texture_bind_group(
+            device,
+            &self.texture_bind_group_layout,
+            &self.sampler,
+            &view,
+        );
+        self.textures.insert(name.to_string(), bind_group);
+    }
+}
+
+fn make_texture_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+    view: &wgpu::TextureView,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("particle_texture_bind_group"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    })
 }
 
 fn create_circle_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::Texture {
