@@ -37,3 +37,54 @@ editor = [
 [[bin]]
 name = "particle-editor"
 required-features = ["editor"]
+
+[lints.rust]
+warnings = { level = "deny", priority = -2 }
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+missing_transmute_annotations = "deny"
+expect_used = "deny"
+cognitive_complexity = "allow"
+suboptimal_flops = "allow"
+missing_const_for_fn = "allow"
+similar_names = "allow"
+wildcard_imports = "allow"
+inline_always = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+module_name_repetitions = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"
+too_many_lines = "allow"
+trivially_copy_pass_by_ref = "allow"
+needless_pass_by_value = "allow"
+enum_glob_use = "allow"
+cast_possible_wrap = "allow"
+items_after_statements = "allow"
+unreadable_literal = "allow"
+fn_params_excessive_bools = "allow"
+too_many_arguments = "allow"
+cast_lossless = "allow"
+range_plus_one = "allow"
+option_if_let_else = "allow"
+match_same_arms = "allow"
+semicolon_if_nothing_returned = "allow"
+many_single_char_names = "allow"
+suspicious_operation_groupings = "allow"
+return_self_not_must_use = "allow"
+struct_field_names = "allow"
+implicit_hasher = "allow"
+while_float = "allow"
+missing_panics_doc = "allow"
+trait_duplication_in_bounds = "allow"
+needless_collect = "allow"
+boxed_local = "allow"
+float_cmp = "allow"
+case_sensitive_file_extension_comparisons = "allow"
+unchecked_time_subtraction = "allow"
+suspicious_arithmetic_impl = "allow"
+future_not_send = "allow"

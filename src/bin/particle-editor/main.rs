@@ -3,6 +3,7 @@
 mod axes;
 mod textures;
 
+use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -32,30 +33,40 @@ enum PreviewMotion {
 }
 
 impl PreviewMotion {
-    const ALL: [PreviewMotion; 5] = [
-        PreviewMotion::Static,
-        PreviewMotion::Circle,
-        PreviewMotion::Line,
-        PreviewMotion::Figure8,
-        PreviewMotion::MouseFollow,
+    const ALL: [Self; 5] = [
+        Self::Static,
+        Self::Circle,
+        Self::Line,
+        Self::Figure8,
+        Self::MouseFollow,
     ];
 
     fn label(self) -> &'static str {
         match self {
-            PreviewMotion::Static => "Static",
-            PreviewMotion::Circle => "Circle",
-            PreviewMotion::Line => "Line",
-            PreviewMotion::Figure8 => "Figure-8",
-            PreviewMotion::MouseFollow => "Mouse-Follow",
+            Self::Static => "Static",
+            Self::Circle => "Circle",
+            Self::Line => "Line",
+            Self::Figure8 => "Figure-8",
+            Self::MouseFollow => "Mouse-Follow",
         }
     }
 }
 
-fn main() {
-    let event_loop = EventLoop::new().expect("event loop");
+fn main() -> ExitCode {
+    let event_loop = match EventLoop::new() {
+        Ok(event_loop) => event_loop,
+        Err(error) => {
+            eprintln!("failed to create event loop: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App { state: None };
-    event_loop.run_app(&mut app).expect("run app");
+    if let Err(error) = event_loop.run_app(&mut app) {
+        eprintln!("event loop error: {error}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
 }
 
 struct App {
@@ -65,7 +76,13 @@ struct App {
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_none() {
-            self.state = Some(State::new(event_loop));
+            match State::new(event_loop) {
+                Ok(state) => self.state = Some(state),
+                Err(error) => {
+                    eprintln!("failed to initialize editor: {error}");
+                    event_loop.exit();
+                }
+            }
         }
     }
 
@@ -196,7 +213,7 @@ impl Editor {
 
     fn build_effect(&self) -> ParticleEffect {
         let mut effect = ParticleEffect::parse("");
-        effect.texture = self.effect.texture.clone();
+        effect.texture.clone_from(&self.effect.texture);
         effect.sheet = self.effect.sheet;
         effect.blend = self.effect.blend;
         effect.max_particles = self.effect.max_particles;
@@ -238,22 +255,24 @@ struct State {
 }
 
 impl State {
-    fn new(event_loop: &ActiveEventLoop) -> Self {
+    fn new(event_loop: &ActiveEventLoop) -> Result<Self, String> {
         let window = Arc::new(
             event_loop
                 .create_window(Window::default_attributes().with_title("simple-particles editor"))
-                .expect("window"),
+                .map_err(|error| error.to_string())?,
         );
         let size = window.inner_size();
 
         let instance = wgpu::Instance::default();
-        let surface = instance.create_surface(window.clone()).expect("surface");
+        let surface = instance
+            .create_surface(window.clone())
+            .map_err(|error| error.to_string())?;
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
             force_fallback_adapter: false,
             compatible_surface: Some(&surface),
         }))
-        .expect("adapter");
+        .map_err(|error| error.to_string())?;
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("device"),
             required_features: wgpu::Features::empty(),
@@ -262,14 +281,14 @@ impl State {
             experimental_features: wgpu::ExperimentalFeatures::default(),
             trace: wgpu::Trace::Off,
         }))
-        .expect("device");
+        .map_err(|error| error.to_string())?;
 
         let caps = surface.get_capabilities(&adapter);
         let format = caps
             .formats
             .iter()
             .copied()
-            .find(|f| f.is_srgb())
+            .find(wgpu::TextureFormat::is_srgb)
             .unwrap_or(caps.formats[0]);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -305,7 +324,7 @@ impl State {
         system.register(PREVIEW, editor.build_effect());
         let preview_id = system.spawn(PREVIEW, [0.0, 0.0, 0.0]);
 
-        Self {
+        Ok(Self {
             window,
             device,
             queue,
@@ -323,7 +342,7 @@ impl State {
             follow_pos: [0.0, 0.0, 0.0],
             panel_width: 0.0,
             last_frame: Instant::now(),
-        }
+        })
     }
 
     fn resize(&mut self, width: u32, height: u32) {
