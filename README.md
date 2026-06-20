@@ -21,6 +21,7 @@ Curves are `time:value` keyframes, gradients are `time:#rrggbbaa` stops.
 
 ```
 texture spark.png
+sheet 4 4
 blend additive
 max_particles 200
 loop false
@@ -28,6 +29,8 @@ duration 0.5
 
 # emit
 rate 60
+rate_distance 0
+burst 0
 shape cone
 radius 0.2
 angle 25
@@ -37,6 +40,7 @@ lifetime 0.4 0.8
 speed 4 6
 gravity 0 -9 0
 drag 0.1
+spin -2 2
 
 # size
 curve 0:0.1 0.3:0.5 1:0.0
@@ -46,7 +50,20 @@ gradient 0:#fff8c0ff 0.5:#ff8800ff 1:#88000000
 ```
 
 Emitter shapes: `point`, `sphere`, `hemisphere`, `cone`, `box`, `disc`, `ring`,
-`line`, `rect`.
+`line`, `rect`. Shape parameters follow the `shape` line: `radius` (sphere, hemisphere,
+cone, disc, ring), `angle` (cone), `box_size x y z` (box), `rect_size x z` (rect),
+`length` (line).
+
+`rate` emits per second; `rate_distance` adds emission per world unit the emitter
+travels (for trails); `burst` emits a one-off count on spawn. `spin min max` randomizes
+angular velocity.
+
+### Textures and sprite sheets
+
+`texture <name>` selects a registered texture (default `circle`, a built-in soft dot).
+`sheet <columns> <rows>` treats that texture as a sprite sheet and plays one frame per
+cell across the particle's lifetime — top-left to bottom-right, exactly once. Omit
+`sheet` (or set `1 1`) for a static texture.
 
 ## Library use
 
@@ -71,15 +88,27 @@ renderer.prepare(&device, &queue, &draws);
 renderer.draw(&mut render_pass);
 ```
 
+Register textures by name before rendering. The renderer builds the GPU texture from
+raw RGBA bytes — it does no image decoding itself, so you keep your own decoder and it
+stays wasm-friendly:
+
+```rust
+renderer.register_texture(&device, &queue, "spark", &rgba, width, height);
+```
+
+An effect's `texture` field then selects it by name; unknown names fall back to the
+built-in `circle`.
+
 ## Editor
 
 ```sh
 cargo run --features editor -- [optional/path.particle]
 ```
 
-Orbiting live preview on the left-hand controls. Sliders for every field, an emitter-shape
-picker, save/load to `.particle` files. A path passed on the command line is opened on
-startup, so the binary works as a file association handler.
+Drag the preview to orbit (with a Blender-style axis gizmo for orientation), or pick a
+motion path to watch a moving emitter. Sliders for every field, an emitter-shape picker,
+a texture and sprite-sheet selector, and save/load to `.particle` files. A path passed on
+the command line is opened on startup, so the binary works as a file association handler.
 
 ## Notes for working in this codebase
 
