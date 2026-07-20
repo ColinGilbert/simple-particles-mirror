@@ -3,9 +3,10 @@
 mod axes;
 mod textures;
 
+use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use axes::AxisRenderer;
 use egui_wgpu::ScreenDescriptor;
@@ -140,6 +141,7 @@ struct Editor {
     wind: [f32; 3],
     background: [f32; 3],
     path: String,
+    last_modified: Option<SystemTime>,
     status: String,
     panel_open: bool,
     show_axes: bool,
@@ -161,6 +163,7 @@ impl Editor {
             wind: [0.0, 0.0, 0.0],
             background: [0.04, 0.05, 0.08],
             path: "effect.particle".to_string(),
+            last_modified: None,
             status: String::new(),
             panel_open: true,
             show_axes: true,
@@ -191,7 +194,10 @@ impl Editor {
 
     fn save(&mut self) {
         match std::fs::write(&self.path, self.build_effect().to_string()) {
-            Ok(()) => self.status = format!("Saved: {}", self.path),
+            Ok(()) => {
+                self.stamp_file();
+                self.status = format!("Saved: {}", self.path);
+            }
             Err(error) => self.status = format!("Save failed: {error}"),
         }
     }
@@ -199,35 +205,41 @@ impl Editor {
     fn load(&mut self) {
         match std::fs::read_to_string(&self.path) {
             Ok(content) => {
-                let effect = ParticleEffect::parse(&content);
-                self.size_start = effect.size.sample(0.0);
-                self.size_end = effect.size.sample(1.0);
-                self.color_start = effect.color.sample(0.0);
-                self.color_end = effect.color.sample(1.0);
-                self.effect = effect;
+                self.apply(ParticleEffect::parse(&content));
+                self.stamp_file();
                 self.status = format!("Loaded: {}", self.path);
             }
             Err(error) => self.status = format!("Load failed: {error}"),
         }
     }
 
+    fn apply(&mut self, effect: ParticleEffect) {
+        self.size_start = effect.size.sample(0.0);
+        self.size_end = effect.size.sample(1.0);
+        self.color_start = effect.color.sample(0.0);
+        self.color_end = effect.color.sample(1.0);
+        self.effect = effect;
+    }
+
+    fn stamp_file(&mut self) {
+        self.last_modified = std::fs::metadata(&self.path)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+    }
+
+    fn poll_reload(&mut self) -> bool {
+        let Some(effect) =
+            ParticleEffect::reload_if_changed(Path::new(&self.path), &mut self.last_modified)
+        else {
+            return false;
+        };
+        self.apply(effect);
+        self.status = format!("Reloaded: {}", self.path);
+        true
+    }
+
     fn build_effect(&self) -> ParticleEffect {
-        let mut effect = ParticleEffect::parse("");
-        effect.texture.clone_from(&self.effect.texture);
-        effect.sheet = self.effect.sheet;
-        effect.blend = self.effect.blend;
-        effect.max_particles = self.effect.max_particles;
-        effect.looping = self.effect.looping;
-        effect.duration = self.effect.duration;
-        effect.rate = self.effect.rate;
-        effect.rate_distance = self.effect.rate_distance;
-        effect.burst = self.effect.burst;
-        effect.shape = self.effect.shape;
-        effect.lifetime = self.effect.lifetime;
-        effect.speed = self.effect.speed;
-        effect.gravity = self.effect.gravity;
-        effect.drag = self.effect.drag;
-        effect.spin = self.effect.spin;
+        let mut effect = self.effect.clone();
         effect.size = Curve::linear(self.size_start, self.size_end);
         effect.color = Gradient::linear(self.color_start, self.color_end);
         effect
@@ -373,6 +385,7 @@ impl State {
         let delta_time = (now - self.last_frame).as_secs_f32().min(0.1);
         self.last_frame = now;
 
+        let reloaded = self.editor.poll_reload();
         let mut changed = false;
         let mut panel_width = 0.0;
         let editor = &mut self.editor;
@@ -380,7 +393,7 @@ impl State {
             (changed, panel_width) = build_ui(ui, editor);
         });
         self.panel_width = panel_width * self.window.scale_factor() as f32;
-        if changed {
+        if changed || reloaded {
             self.system.register(PREVIEW, self.editor.build_effect());
         }
 

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::SystemTime;
 
 use header_parsing::parse_header;
 use simple_vectors::Vector;
@@ -35,6 +36,7 @@ pub enum EmitterShape {
     Rect { size: [f32; 2] },
 }
 
+#[derive(Debug, Clone)]
 pub struct Curve {
     keys: Vec<[f32; 2]>,
 }
@@ -94,6 +96,7 @@ impl Curve {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Gradient {
     keys: Vec<(f32, [f32; 4])>,
 }
@@ -176,6 +179,7 @@ fn parse_hex_color(text: &str) -> Option<[f32; 4]> {
     ])
 }
 
+#[derive(Debug, Clone)]
 pub struct ParticleEffect {
     pub texture: String,
     pub sheet: [u32; 2],
@@ -201,6 +205,18 @@ impl ParticleEffect {
     pub fn load(path: &Path) -> Self {
         let content = std::fs::read_to_string(path).expect("failed to read .particle file");
         Self::parse(&content)
+    }
+
+    pub fn reload_if_changed(path: &Path, last_modified: &mut Option<SystemTime>) -> Option<Self> {
+        let modified = std::fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .ok()?;
+        if *last_modified == Some(modified) {
+            return None;
+        }
+        let content = std::fs::read_to_string(path).ok()?;
+        *last_modified = Some(modified);
+        Some(Self::parse(&content))
     }
 
     pub fn parse(content: &str) -> Self {
