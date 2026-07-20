@@ -99,6 +99,37 @@ renderer.register_texture(&device, &queue, "spark", &rgba, width, height);
 An effect's `texture` field then selects it by name; unknown names fall back to the
 built-in `circle`.
 
+### Soft particles
+
+Pass the scene depth buffer to fade particles out where they intersect geometry, instead
+of showing a hard slice through it. The depth attachment must be bound read-only in the
+pass that draws the particles:
+
+```rust
+renderer.set_soft_particles(&device, &queue, Some(&depth_view), near, far, 0.5);
+```
+
+The last argument is the fade distance in world units — the knob to tune per scene.
+Pass `None` to turn the fade back off.
+
+### Hot reload
+
+Re-parse an effect when its file changes on disk, for live tuning without a restart. You
+keep the timestamp, so there is no background thread and no file-watching dependency:
+
+```rust
+let mut last_modified = None;
+if let Some(effect) = ParticleEffect::reload_if_changed(path, &mut last_modified) {
+    system.register("spark", effect);
+}
+```
+
+### Curves and gradients
+
+`Curve` and `Gradient` hold arbitrarily many keys, not just endpoints. Read them with
+`keys()` / `stops()` and rebuild with `Curve::from_keys` / `Gradient::from_stops`, which
+sort the keys and never leave the set empty.
+
 ## Editor
 
 ```sh
@@ -107,8 +138,16 @@ cargo run --features editor -- [optional/path.particle]
 
 Drag the preview to orbit (with a Blender-style axis gizmo for orientation), or pick a
 motion path to watch a moving emitter. Sliders for every field, an emitter-shape picker,
-a texture and sprite-sheet selector, and save/load to `.particle` files. A path passed on
-the command line is opened on startup, so the binary works as a file association handler.
+a texture and sprite-sheet selector, multi-point editors for the size curve and the color
+gradient, and save/load to `.particle` files. Wind shows up as a faint noise backdrop
+scrolling in its direction. A path passed on the command line is opened on startup, so
+the binary works as a file association handler, and edits made to that file elsewhere are
+picked up while the editor runs.
+
+The interface ships in English and German and follows the system language (`LANG`,
+`LC_ALL`, `LC_MESSAGES`, `LANGUAGE`), with a dropdown to override it. Translations live
+in `assets/lang/<code>.lang` as `key value` lines; adding a language means dropping in a
+file and listing it in `Language`.
 
 ## Notes for working in this codebase
 
