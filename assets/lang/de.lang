@@ -1,0 +1,79 @@
+file Datei
+path Pfad
+save Speichern
+load Laden
+parameters Parameter
+parameters_hint Wird in der .particle-Datei gespeichert.
+preview Vorschau
+preview_hint Nur Editor — wird nicht gespeichert.
+language Sprache
+
+rate Rate
+rate_distance Rate / Distanz
+lifetime_min Lebensdauer min
+lifetime_max Lebensdauer max
+speed_min Geschwindigkeit min
+speed_max Geschwindigkeit max
+gravity_x Gravitation X
+gravity_y Gravitation Y
+gravity_z Gravitation Z
+drag Luftwiderstand
+spin_min Drehung min
+spin_max Drehung max
+max_particles Max. Partikel
+burst Ausstoß
+looping Endlos
+duration Dauer
+
+size_over_lifetime Größe über Lebensdauer
+color_over_lifetime Farbe über Lebensdauer
+add_key + Punkt
+add_stop + Stopp
+time t
+size Größe
+
+additive_blend Additives Blending
+texture Textur
+sheet Sheet
+sheet_columns Spalten
+sheet_rows Zeilen
+emitter_shape Emitterform
+
+radius Radius
+angle Winkel
+width Breite
+height Höhe
+depth Tiefe
+length Länge
+
+shape_point Punkt
+shape_sphere Kugel
+shape_hemisphere Halbkugel
+shape_cone Kegel
+shape_box Quader
+shape_disc Scheibe
+shape_ring Ring
+shape_line Linie
+shape_rect Rechteck
+
+motion_static Statisch
+motion_circle Kreis
+motion_line Linie
+motion_figure8 Acht
+motion_mouse_follow Maus folgen
+
+follow_delay Folge-Verzögerung
+path_speed Pfad-Tempo
+wind_x Wind X
+wind_y Wind Y
+wind_z Wind Z
+background Hintergrund
+show_axes Achsen anzeigen
+orbit_hint Vorschau ziehen zum Drehen.
+reset_view Ansicht zurücksetzen
+
+status_saved Gespeichert
+status_loaded Geladen
+status_reloaded Neu geladen
+status_save_failed Speichern fehlgeschlagen
+status_load_failed Laden fehlgeschlagen

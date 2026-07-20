@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod axes;
+mod locale;
 mod textures;
 mod ui;
 mod wind;
@@ -12,6 +13,7 @@ use std::time::{Instant, SystemTime};
 
 use axes::AxisRenderer;
 use egui_wgpu::ScreenDescriptor;
+use locale::t;
 use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
 use simple_particles::{EmitterId, ParticleSystem, render::ParticleRenderer};
 use ui::build_ui;
@@ -48,11 +50,11 @@ impl PreviewMotion {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Static => "Static",
-            Self::Circle => "Circle",
-            Self::Line => "Line",
-            Self::Figure8 => "Figure-8",
-            Self::MouseFollow => "Mouse-Follow",
+            Self::Static => t("motion_static"),
+            Self::Circle => t("motion_circle"),
+            Self::Line => t("motion_line"),
+            Self::Figure8 => t("motion_figure8"),
+            Self::MouseFollow => t("motion_mouse_follow"),
         }
     }
 }
@@ -188,9 +190,9 @@ impl Editor {
         match std::fs::write(&self.path, self.effect.to_string()) {
             Ok(()) => {
                 self.stamp_file();
-                self.status = format!("Saved: {}", self.path);
+                self.status = format!("{}: {}", t("status_saved"), self.path);
             }
-            Err(error) => self.status = format!("Save failed: {error}"),
+            Err(error) => self.status = format!("{}: {error}", t("status_save_failed")),
         }
     }
 
@@ -199,9 +201,9 @@ impl Editor {
             Ok(content) => {
                 self.effect = ParticleEffect::parse(&content);
                 self.stamp_file();
-                self.status = format!("Loaded: {}", self.path);
+                self.status = format!("{}: {}", t("status_loaded"), self.path);
             }
-            Err(error) => self.status = format!("Load failed: {error}"),
+            Err(error) => self.status = format!("{}: {error}", t("status_load_failed")),
         }
     }
 
@@ -218,7 +220,7 @@ impl Editor {
             return false;
         };
         self.effect = effect;
-        self.status = format!("Reloaded: {}", self.path);
+        self.status = format!("{}: {}", t("status_reloaded"), self.path);
         true
     }
 }

@@ -1,0 +1,79 @@
+file File
+path Path
+save Save
+load Load
+parameters Parameters
+parameters_hint Saved to the .particle file.
+preview Preview
+preview_hint Editor only — not saved.
+language Language
+
+rate Rate
+rate_distance Rate / distance
+lifetime_min Lifetime min
+lifetime_max Lifetime max
+speed_min Speed min
+speed_max Speed max
+gravity_x Gravity X
+gravity_y Gravity Y
+gravity_z Gravity Z
+drag Drag
+spin_min Spin min
+spin_max Spin max
+max_particles Max particles
+burst Burst
+looping Looping
+duration Duration
+
+size_over_lifetime Size over lifetime
+color_over_lifetime Color over lifetime
+add_key + key
+add_stop + stop
+time t
+size size
+
+additive_blend Additive blend
+texture Texture
+sheet Sheet
+sheet_columns cols
+sheet_rows rows
+emitter_shape Emitter shape
+
+radius Radius
+angle Angle
+width Width
+height Height
+depth Depth
+length Length
+
+shape_point Point
+shape_sphere Sphere
+shape_hemisphere Hemisphere
+shape_cone Cone
+shape_box Box
+shape_disc Disc
+shape_ring Ring
+shape_line Line
+shape_rect Rectangle
+
+motion_static Static
+motion_circle Circle
+motion_line Line
+motion_figure8 Figure-8
+motion_mouse_follow Mouse-Follow
+
+follow_delay Follow delay
+path_speed Path speed
+wind_x Wind X
+wind_y Wind Y
+wind_z Wind Z
+background Background
+show_axes Show axes
+orbit_hint Drag the preview to orbit.
+reset_view Reset view
+
+status_saved Saved
+status_loaded Loaded
+status_reloaded Reloaded
+status_save_failed Save failed
+status_load_failed Load failed
