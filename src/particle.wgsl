@@ -1,9 +1,21 @@
 struct Camera {
     view_projection: mat4x4<f32>,
+    near: f32,
+    far: f32,
+    fade_distance: f32,
+    soft_enabled: f32,
 }
 
 @group(0) @binding(0)
 var<uniform> camera: Camera;
+
+@group(2) @binding(0)
+var scene_depth: texture_depth_2d;
+
+fn view_distance(depth: f32) -> f32 {
+    return camera.near * camera.far
+        / (camera.far - depth * (camera.far - camera.near));
+}
 
 @group(1) @binding(0)
 var particle_texture: texture_2d<f32>;
@@ -80,5 +92,11 @@ fn vertex_main(@builtin(vertex_index) vertex_index: u32, instance: Instance) -> 
 @fragment
 fn fragment_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let texel = textureSample(particle_texture, particle_sampler, input.uv);
-    return texel * input.color;
+    var color = texel * input.color;
+    if camera.soft_enabled > 0.5 {
+        let scene = textureLoad(scene_depth, vec2<i32>(input.clip_position.xy), 0);
+        let gap = view_distance(scene) - view_distance(input.clip_position.z);
+        color.a *= clamp(gap / camera.fade_distance, 0.0, 1.0);
+    }
+    return color;
 }

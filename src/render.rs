@@ -17,9 +17,14 @@ struct InstanceRaw {
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct CameraRaw {
-    view_projection: [[f32; 4]; 4],
+struct SoftRaw {
+    near: f32,
+    far: f32,
+    fade_distance: f32,
+    enabled: f32,
 }
+
+const CAMERA_BUFFER_SIZE: u64 = 80;
 
 struct Batch {
     additive: bool,
@@ -71,6 +76,8 @@ pub struct ParticleRenderer {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     texture_bind_group_layout: wgpu::BindGroupLayout,
+    depth_bind_group_layout: wgpu::BindGroupLayout,
+    depth_bind_group: wgpu::BindGroup,
     sampler: wgpu::Sampler,
     textures: HashMap<String, wgpu::BindGroup>,
     instance_buffer: wgpu::Buffer,
@@ -96,7 +103,7 @@ impl ParticleRenderer {
                 label: Some("particle_camera_layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -107,7 +114,7 @@ impl ParticleRenderer {
             });
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("particle_camera_buffer"),
-            size: std::mem::size_of::<CameraRaw>() as u64,
+            size: CAMERA_BUFFER_SIZE,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -157,11 +164,46 @@ impl ParticleRenderer {
             textures.insert(name.to_string(), bind_group);
         }
 
+        let depth_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("particle_depth_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                }],
+            });
+        let placeholder_depth = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("particle_placeholder_depth"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Depth32Float,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let depth_bind_group =
+            make_depth_bind_group(device, &depth_bind_group_layout, &placeholder_depth);
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("particle_pipeline_layout"),
             bind_group_layouts: &[
                 Some(&camera_bind_group_layout),
                 Some(&texture_bind_group_layout),
+                Some(&depth_bind_group_layout),
             ],
             immediate_size: 0,
         });
@@ -237,6 +279,8 @@ impl ParticleRenderer {
             camera_buffer,
             camera_bind_group,
             texture_bind_group_layout,
+            depth_bind_group_layout,
+            depth_bind_group,
             sampler,
             textures,
             instance_buffer,
@@ -247,11 +291,29 @@ impl ParticleRenderer {
     }
 
     pub fn set_camera(&self, queue: &wgpu::Queue, view_projection: [[f32; 4]; 4]) {
-        queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::bytes_of(&CameraRaw { view_projection }),
-        );
+        queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&view_projection));
+    }
+
+    pub fn set_soft_particles(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        scene_depth: Option<&wgpu::TextureView>,
+        near: f32,
+        far: f32,
+        fade_distance: f32,
+    ) {
+        if let Some(view) = scene_depth {
+            self.depth_bind_group =
+                make_depth_bind_group(device, &self.depth_bind_group_layout, view);
+        }
+        let soft = SoftRaw {
+            near,
+            far,
+            fade_distance: fade_distance.max(1e-4),
+            enabled: if scene_depth.is_some() { 1.0 } else { 0.0 },
+        };
+        queue.write_buffer(&self.camera_buffer, 64, bytemuck::bytes_of(&soft));
     }
 
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, draws: &[EffectDraw]) {
@@ -307,6 +369,7 @@ impl ParticleRenderer {
             return;
         };
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.depth_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
         for batch in &self.batches {
             let texture = self.textures.get(&batch.texture).unwrap_or(fallback);
@@ -358,6 +421,21 @@ impl ParticleRenderer {
         );
         self.textures.insert(name.to_string(), bind_group);
     }
+}
+
+fn make_depth_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    view: &wgpu::TextureView,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("particle_depth_bind_group"),
+        layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::TextureView(view),
+        }],
+    })
 }
 
 fn make_texture_bind_group(
