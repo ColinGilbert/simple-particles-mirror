@@ -2,6 +2,7 @@
 
 mod axes;
 mod textures;
+mod ui;
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -12,6 +13,7 @@ use axes::AxisRenderer;
 use egui_wgpu::ScreenDescriptor;
 use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
 use simple_particles::{EmitterId, ParticleSystem, render::ParticleRenderer};
+use ui::build_ui;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -131,10 +133,6 @@ impl ApplicationHandler for App {
 
 struct Editor {
     effect: ParticleEffect,
-    size_start: f32,
-    size_end: f32,
-    color_start: [f32; 4],
-    color_end: [f32; 4],
     motion_mode: PreviewMotion,
     path_speed: f32,
     follow_delay: f32,
@@ -153,10 +151,6 @@ impl Editor {
     fn default_editor() -> Self {
         let mut editor = Self {
             effect: ParticleEffect::parse(""),
-            size_start: 0.3,
-            size_end: 0.0,
-            color_start: [1.0, 0.85, 0.4, 1.0],
-            color_end: [1.0, 0.3, 0.1, 0.0],
             motion_mode: PreviewMotion::Static,
             path_speed: 1.0,
             follow_delay: 0.15,
@@ -183,17 +177,13 @@ impl Editor {
         editor.effect.gravity = [0.0, -2.0, 0.0].into();
         editor.effect.drag = 0.1;
         editor.effect.spin = [-2.0, 2.0];
-        editor.rebuild();
+        editor.effect.size = Curve::linear(0.3, 0.0);
+        editor.effect.color = Gradient::linear([1.0, 0.85, 0.4, 1.0], [1.0, 0.3, 0.1, 0.0]);
         editor
     }
 
-    fn rebuild(&mut self) {
-        self.effect.size = Curve::linear(self.size_start, self.size_end);
-        self.effect.color = Gradient::linear(self.color_start, self.color_end);
-    }
-
     fn save(&mut self) {
-        match std::fs::write(&self.path, self.build_effect().to_string()) {
+        match std::fs::write(&self.path, self.effect.to_string()) {
             Ok(()) => {
                 self.stamp_file();
                 self.status = format!("Saved: {}", self.path);
@@ -205,20 +195,12 @@ impl Editor {
     fn load(&mut self) {
         match std::fs::read_to_string(&self.path) {
             Ok(content) => {
-                self.apply(ParticleEffect::parse(&content));
+                self.effect = ParticleEffect::parse(&content);
                 self.stamp_file();
                 self.status = format!("Loaded: {}", self.path);
             }
             Err(error) => self.status = format!("Load failed: {error}"),
         }
-    }
-
-    fn apply(&mut self, effect: ParticleEffect) {
-        self.size_start = effect.size.sample(0.0);
-        self.size_end = effect.size.sample(1.0);
-        self.color_start = effect.color.sample(0.0);
-        self.color_end = effect.color.sample(1.0);
-        self.effect = effect;
     }
 
     fn stamp_file(&mut self) {
@@ -233,16 +215,9 @@ impl Editor {
         else {
             return false;
         };
-        self.apply(effect);
+        self.effect = effect;
         self.status = format!("Reloaded: {}", self.path);
         true
-    }
-
-    fn build_effect(&self) -> ParticleEffect {
-        let mut effect = self.effect.clone();
-        effect.size = Curve::linear(self.size_start, self.size_end);
-        effect.color = Gradient::linear(self.color_start, self.color_end);
-        effect
     }
 }
 
@@ -333,7 +308,7 @@ impl State {
             editor.load();
         }
         let mut system = ParticleSystem::new();
-        system.register(PREVIEW, editor.build_effect());
+        system.register(PREVIEW, editor.effect.clone());
         let preview_id = system.spawn(PREVIEW, [0.0, 0.0, 0.0]);
 
         Ok(Self {
@@ -394,7 +369,7 @@ impl State {
         });
         self.panel_width = panel_width * self.window.scale_factor() as f32;
         if changed || reloaded {
-            self.system.register(PREVIEW, self.editor.build_effect());
+            self.system.register(PREVIEW, self.editor.effect.clone());
         }
 
         let radius = 1.5_f32;
@@ -546,300 +521,6 @@ impl State {
         self.window.pre_present_notify();
         frame.present();
     }
-}
-
-fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> (bool, f32) {
-    let mut changed = false;
-    if !editor.panel_open {
-        egui::Area::new(egui::Id::new("reopen"))
-            .fixed_pos([8.0, 8.0])
-            .show(root.ctx(), |ui| {
-                if ui.button("☰").clicked() {
-                    editor.panel_open = true;
-                }
-            });
-        return (false, 0.0);
-    }
-    let panel = egui::Panel::left("controls")
-        .default_size(280.0)
-        .show_inside(root, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.heading("File");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("×").clicked() {
-                            editor.panel_open = false;
-                        }
-                    });
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Path");
-                    ui.text_edit_singleline(&mut editor.path);
-                });
-                ui.horizontal(|ui| {
-                    if ui.button("Save").clicked() {
-                        editor.save();
-                    }
-                    if ui.button("Load").clicked() {
-                        editor.load();
-                        changed = true;
-                    }
-                });
-                if !editor.status.is_empty() {
-                    ui.label(&editor.status);
-                }
-                ui.separator();
-                ui.heading("Parameters");
-                ui.label("Saved to the .particle file.");
-                {
-                    let effect = &mut editor.effect;
-                    changed |= ui
-                        .add(egui::Slider::new(&mut effect.rate, 0.0..=400.0).text("Rate"))
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut effect.rate_distance, 0.0..=200.0)
-                                .text("Rate / distance"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut effect.lifetime[0], 0.05..=4.0)
-                                .text("Lifetime min"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut effect.lifetime[1], 0.05..=4.0)
-                                .text("Lifetime max"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(egui::Slider::new(&mut effect.speed[0], 0.0..=12.0).text("Speed min"))
-                        .changed();
-                    changed |= ui
-                        .add(egui::Slider::new(&mut effect.speed[1], 0.0..=12.0).text("Speed max"))
-                        .changed();
-                    let mut gravity = effect.gravity[1];
-                    if ui
-                        .add(egui::Slider::new(&mut gravity, -20.0..=20.0).text("Gravity Y"))
-                        .changed()
-                    {
-                        effect.gravity = [0.0, gravity, 0.0].into();
-                        changed = true;
-                    }
-                    changed |= ui
-                        .add(egui::Slider::new(&mut effect.drag, 0.0..=5.0).text("Drag"))
-                        .changed();
-                    changed |= ui
-                        .add(egui::Slider::new(&mut effect.spin[1], 0.0..=12.0).text("Spin max"))
-                        .changed();
-                }
-                changed |= ui
-                    .add(egui::Slider::new(&mut editor.size_start, 0.0..=2.0).text("Size start"))
-                    .changed();
-                changed |= ui
-                    .add(egui::Slider::new(&mut editor.size_end, 0.0..=2.0).text("Size end"))
-                    .changed();
-                ui.horizontal(|ui| {
-                    ui.label("Color start / end");
-                    changed |= ui
-                        .color_edit_button_rgba_unmultiplied(&mut editor.color_start)
-                        .changed();
-                    changed |= ui
-                        .color_edit_button_rgba_unmultiplied(&mut editor.color_end)
-                        .changed();
-                });
-                let mut additive = matches!(editor.effect.blend, BlendMode::Additive);
-                if ui.checkbox(&mut additive, "Additive blend").changed() {
-                    editor.effect.blend = if additive {
-                        BlendMode::Additive
-                    } else {
-                        BlendMode::Alpha
-                    };
-                    changed = true;
-                }
-                ui.label("Texture");
-                egui::ComboBox::from_id_salt("texture")
-                    .selected_text(&editor.effect.texture)
-                    .show_ui(ui, |ui| {
-                        for option in ["circle", "grid"] {
-                            if ui
-                                .selectable_label(editor.effect.texture == option, option)
-                                .clicked()
-                                && editor.effect.texture != option
-                            {
-                                editor.effect.texture = option.to_string();
-                                changed = true;
-                            }
-                        }
-                    });
-                ui.horizontal(|ui| {
-                    ui.label("Sheet");
-                    changed |= ui
-                        .add(
-                            egui::DragValue::new(&mut editor.effect.sheet[0])
-                                .range(1..=16)
-                                .prefix("cols "),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::DragValue::new(&mut editor.effect.sheet[1])
-                                .range(1..=16)
-                                .prefix("rows "),
-                        )
-                        .changed();
-                });
-                ui.label("Emitter shape");
-                let shape = &mut editor.effect.shape;
-                let current = shape_name(shape);
-                egui::ComboBox::from_id_salt("shape")
-                    .selected_text(current)
-                    .show_ui(ui, |ui| {
-                        for option in SHAPE_OPTIONS {
-                            if ui.selectable_label(current == option, option).clicked()
-                                && current != option
-                            {
-                                *shape = default_shape(option);
-                                changed = true;
-                            }
-                        }
-                    });
-                changed |= shape_params(ui, shape);
-
-                ui.separator();
-                ui.heading("Preview");
-                ui.label("Editor only — not saved.");
-                egui::ComboBox::from_id_salt("motion")
-                    .selected_text(editor.motion_mode.label())
-                    .show_ui(ui, |ui| {
-                        for mode in PreviewMotion::ALL {
-                            ui.selectable_value(&mut editor.motion_mode, mode, mode.label());
-                        }
-                    });
-                if editor.motion_mode == PreviewMotion::MouseFollow {
-                    ui.add(
-                        egui::Slider::new(&mut editor.follow_delay, 0.01..=1.0)
-                            .text("Follow delay"),
-                    );
-                } else if editor.motion_mode != PreviewMotion::Static {
-                    ui.add(egui::Slider::new(&mut editor.path_speed, 0.0..=4.0).text("Path speed"));
-                }
-                ui.add(egui::Slider::new(&mut editor.wind[0], -8.0..=8.0).text("Wind X"));
-                ui.add(egui::Slider::new(&mut editor.wind[1], -8.0..=8.0).text("Wind Y"));
-                ui.add(egui::Slider::new(&mut editor.wind[2], -8.0..=8.0).text("Wind Z"));
-                ui.horizontal(|ui| {
-                    ui.label("Background");
-                    ui.color_edit_button_rgb(&mut editor.background);
-                });
-                ui.checkbox(&mut editor.show_axes, "Show axes");
-                if editor.motion_mode != PreviewMotion::MouseFollow {
-                    ui.label("Drag the preview to orbit.");
-                    if ui.button("Reset view").clicked() {
-                        editor.yaw = PREVIEW_DEFAULT_YAW;
-                        editor.pitch = PREVIEW_DEFAULT_PITCH;
-                    }
-                }
-            });
-        });
-    if changed {
-        editor.rebuild();
-    }
-    (changed, panel.response.rect.width())
-}
-
-const SHAPE_OPTIONS: [&str; 9] = [
-    "point",
-    "sphere",
-    "hemisphere",
-    "cone",
-    "box",
-    "disc",
-    "ring",
-    "line",
-    "rect",
-];
-
-fn shape_name(shape: &EmitterShape) -> &'static str {
-    match shape {
-        EmitterShape::Point => "point",
-        EmitterShape::Sphere { .. } => "sphere",
-        EmitterShape::Hemisphere { .. } => "hemisphere",
-        EmitterShape::Cone { .. } => "cone",
-        EmitterShape::Box { .. } => "box",
-        EmitterShape::Disc { .. } => "disc",
-        EmitterShape::Ring { .. } => "ring",
-        EmitterShape::Line { .. } => "line",
-        EmitterShape::Rect { .. } => "rect",
-    }
-}
-
-fn default_shape(name: &str) -> EmitterShape {
-    match name {
-        "sphere" => EmitterShape::Sphere { radius: 0.5 },
-        "hemisphere" => EmitterShape::Hemisphere { radius: 0.5 },
-        "cone" => EmitterShape::Cone {
-            radius: 0.2,
-            angle: 25.0,
-        },
-        "box" => EmitterShape::Box {
-            size: [1.0, 1.0, 1.0],
-        },
-        "disc" => EmitterShape::Disc { radius: 1.0 },
-        "ring" => EmitterShape::Ring { radius: 1.0 },
-        "line" => EmitterShape::Line { length: 2.0 },
-        "rect" => EmitterShape::Rect { size: [2.0, 2.0] },
-        _ => EmitterShape::Point,
-    }
-}
-
-fn shape_params(ui: &mut egui::Ui, shape: &mut EmitterShape) -> bool {
-    let mut changed = false;
-    match shape {
-        EmitterShape::Point => {}
-        EmitterShape::Sphere { radius }
-        | EmitterShape::Hemisphere { radius }
-        | EmitterShape::Disc { radius }
-        | EmitterShape::Ring { radius } => {
-            changed |= ui
-                .add(egui::Slider::new(radius, 0.0..=3.0).text("Radius"))
-                .changed();
-        }
-        EmitterShape::Cone { radius, angle } => {
-            changed |= ui
-                .add(egui::Slider::new(radius, 0.0..=3.0).text("Radius"))
-                .changed();
-            changed |= ui
-                .add(egui::Slider::new(angle, 0.0..=90.0).text("Angle"))
-                .changed();
-        }
-        EmitterShape::Box { size } => {
-            changed |= ui
-                .add(egui::Slider::new(&mut size[0], 0.0..=5.0).text("Width"))
-                .changed();
-            changed |= ui
-                .add(egui::Slider::new(&mut size[1], 0.0..=5.0).text("Height"))
-                .changed();
-            changed |= ui
-                .add(egui::Slider::new(&mut size[2], 0.0..=5.0).text("Depth"))
-                .changed();
-        }
-        EmitterShape::Line { length } => {
-            changed |= ui
-                .add(egui::Slider::new(length, 0.0..=8.0).text("Length"))
-                .changed();
-        }
-        EmitterShape::Rect { size } => {
-            changed |= ui
-                .add(egui::Slider::new(&mut size[0], 0.0..=8.0).text("Width"))
-                .changed();
-            changed |= ui
-                .add(egui::Slider::new(&mut size[1], 0.0..=8.0).text("Depth"))
-                .changed();
-        }
-    }
-    changed
 }
 
 fn perspective(fovy: f32, aspect: f32, near: f32, far: f32) -> [[f32; 4]; 4] {

@@ -54,6 +54,19 @@ impl Curve {
         }
     }
 
+    pub fn from_keys(mut keys: Vec<[f32; 2]>) -> Self {
+        keys.sort_by(|a, b| a[0].total_cmp(&b[0]));
+        if keys.is_empty() {
+            Self::constant(1.0)
+        } else {
+            Self { keys }
+        }
+    }
+
+    pub fn keys(&self) -> &[[f32; 2]] {
+        &self.keys
+    }
+
     fn parse(value: &str) -> Self {
         let mut keys: Vec<[f32; 2]> = value
             .split_whitespace()
@@ -106,6 +119,19 @@ impl Gradient {
         Self {
             keys: vec![(0.0, start), (1.0, end)],
         }
+    }
+
+    pub fn from_stops(mut keys: Vec<(f32, [f32; 4])>) -> Self {
+        keys.sort_by(|a, b| a.0.total_cmp(&b.0));
+        if keys.is_empty() {
+            Self::constant([1.0, 1.0, 1.0, 1.0])
+        } else {
+            Self { keys }
+        }
+    }
+
+    pub fn stops(&self) -> &[(f32, [f32; 4])] {
+        &self.keys
     }
 
     fn constant(color: [f32; 4]) -> Self {
