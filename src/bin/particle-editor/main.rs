@@ -3,6 +3,7 @@
 mod axes;
 mod textures;
 mod ui;
+mod wind;
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -14,6 +15,7 @@ use egui_wgpu::ScreenDescriptor;
 use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
 use simple_particles::{EmitterId, ParticleSystem, render::ParticleRenderer};
 use ui::build_ui;
+use wind::WindRenderer;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -229,6 +231,8 @@ struct State {
     config: wgpu::SurfaceConfiguration,
     renderer: ParticleRenderer,
     axes: AxisRenderer,
+    wind: WindRenderer,
+    wind_offset: [f32; 2],
     system: ParticleSystem,
     overlay: EguiOverlay,
     editor: Editor,
@@ -300,6 +304,7 @@ impl State {
             grid_height,
         );
         let axes = AxisRenderer::new(&device, format);
+        let wind = WindRenderer::new(&device, format);
         let overlay = EguiOverlay::new(&device, format, &window);
 
         let mut editor = Editor::default_editor();
@@ -319,6 +324,8 @@ impl State {
             config,
             renderer,
             axes,
+            wind,
+            wind_offset: [0.0, 0.0],
             system,
             overlay,
             editor,
@@ -419,6 +426,8 @@ impl State {
 
         let wind = self.editor.wind;
         self.system.set_wind(wind);
+        self.wind_offset[0] += wind[0] * delta_time * 0.5;
+        self.wind_offset[1] -= wind[1] * delta_time * 0.5;
         let effective = [
             motion_velocity[0] - wind[0],
             motion_velocity[1] - wind[1],
@@ -460,6 +469,13 @@ impl State {
             look_at(gizmo_eye, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         );
         self.axes.set_camera(&self.queue, gizmo_view_projection);
+        let wind_speed = (wind[0] * wind[0] + wind[1] * wind[1] + wind[2] * wind[2]).sqrt();
+        self.wind.set_state(
+            &self.queue,
+            self.wind_offset,
+            aspect,
+            (wind_speed * 0.05).min(0.18),
+        );
         let draws = self.system.collect();
         self.renderer.prepare(&self.device, &self.queue, &draws);
 
@@ -502,6 +518,7 @@ impl State {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            self.wind.draw(&mut render_pass);
             self.renderer.draw(&mut render_pass);
             if self.editor.show_axes {
                 self.axes.draw(
