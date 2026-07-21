@@ -1,7 +1,9 @@
 use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient};
 
-use crate::locale::{self, Language, t};
-use crate::{Editor, PREVIEW_DEFAULT_PITCH, PREVIEW_DEFAULT_YAW, PreviewMotion};
+use crate::{
+    Editor, PREVIEW_DEFAULT_PITCH, PREVIEW_DEFAULT_YAW, PreviewMotion,
+    locale::{self, Language, t},
+};
 
 pub fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> (bool, f32) {
     let mut changed = false;
