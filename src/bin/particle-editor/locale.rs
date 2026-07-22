@@ -10,21 +10,21 @@ pub enum Language {
 impl Language {
     pub const ALL: [Self; 2] = [Self::English, Self::German];
 
-    pub fn code(self) -> &'static str {
+    pub const fn code(self) -> &'static str {
         match self {
             Self::English => "en",
             Self::German => "de",
         }
     }
 
-    pub fn native_name(self) -> &'static str {
+    pub const fn native_name(self) -> &'static str {
         match self {
             Self::English => "English",
             Self::German => "Deutsch",
         }
     }
 
-    fn data(self) -> &'static str {
+    const fn data(self) -> &'static str {
         match self {
             Self::English => include_str!("../../../assets/lang/en.lang"),
             Self::German => include_str!("../../../assets/lang/de.lang"),

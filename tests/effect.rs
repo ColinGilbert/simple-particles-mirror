@@ -1,3 +1,5 @@
+#![expect(clippy::float_cmp)]
+
 use simple_particles::effect::{BlendMode, Emitter, EmitterShape, ParticleEffect, ParticleSystem};
 
 type Vec3 = simple_vectors::Vector<f32, 3>;
@@ -176,4 +178,18 @@ fn sheet_round_trips() {
     effect.sheet = [4, 2];
     let reparsed = ParticleEffect::parse(&effect.to_string());
     assert_eq!(reparsed.sheet, [4, 2]);
+}
+
+#[test]
+fn absurd_rate_stays_bounded_by_max_particles() {
+    let mut system = ParticleSystem::new();
+    system.register(
+        "flood",
+        ParticleEffect::parse("max_particles 32\n\n# emit\nrate 1e9\n\n# life\nlifetime 5 5\n"),
+    );
+    system.spawn("flood", [0.0, 0.0, 0.0]);
+    system.update(1.0 / 60.0);
+
+    let draws = system.collect();
+    assert_eq!(draws[0].instances.len(), 32);
 }

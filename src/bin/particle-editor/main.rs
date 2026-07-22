@@ -117,8 +117,8 @@ impl ApplicationHandler for App {
                 let pointer = [position.x as f32, position.y as f32];
                 if state.rotating {
                     state.editor.yaw -= (pointer[0] - state.pointer[0]) * 0.01;
-                    state.editor.pitch = (state.editor.pitch
-                        + (pointer[1] - state.pointer[1]) * 0.01)
+                    state.editor.pitch = (pointer[1] - state.pointer[1])
+                        .mul_add(0.01, state.editor.pitch)
                         .clamp(-1.4, 1.4);
                 }
                 state.pointer = pointer;
@@ -353,8 +353,8 @@ impl State {
     fn pointer_world(&self) -> [f32; 3] {
         let width = self.config.width.max(1) as f32;
         let height = self.config.height.max(1) as f32;
-        let ndc_x = (self.pointer[0] / width) * 2.0 - 1.0 - self.panel_width / width;
-        let ndc_y = (self.pointer[1] / height) * 2.0 - 1.0;
+        let ndc_x = (self.pointer[0] / width).mul_add(2.0, -1.0) - self.panel_width / width;
+        let ndc_y = (self.pointer[1] / height).mul_add(2.0, -1.0);
         let half_height = PREVIEW_DISTANCE * (PREVIEW_FOV.to_radians() / 2.0).tan();
         let half_width = half_height * (width / height);
         [
@@ -364,26 +364,10 @@ impl State {
         ]
     }
 
-    fn render(&mut self) {
-        let now = Instant::now();
-        let delta_time = (now - self.last_frame).as_secs_f32().min(0.1);
-        self.last_frame = now;
-
-        let reloaded = self.editor.poll_reload();
-        let mut changed = false;
-        let mut panel_width = 0.0;
-        let editor = &mut self.editor;
-        self.overlay.run(&self.window, |ui| {
-            (changed, panel_width) = build_ui(ui, editor);
-        });
-        self.panel_width = panel_width * self.window.scale_factor() as f32;
-        if changed || reloaded {
-            self.system.register(PREVIEW, self.editor.effect.clone());
-        }
-
+    fn step_motion(&mut self, delta_time: f32) -> ([f32; 3], [f32; 3]) {
         let radius = 1.5_f32;
         let omega = 2.0_f32 * self.editor.path_speed.max(0.0);
-        let (origin, motion_velocity) = match self.editor.motion_mode {
+        match self.editor.motion_mode {
             PreviewMotion::Static => ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
             PreviewMotion::Circle => {
                 self.motion_phase += omega * delta_time;
@@ -406,7 +390,7 @@ impl State {
                     [
                         cos * radius * omega,
                         0.0,
-                        (cos * cos - sin * sin) * radius * omega,
+                        cos.mul_add(cos, -(sin * sin)) * radius * omega,
                     ],
                 )
             }
@@ -424,24 +408,10 @@ impl State {
                 self.follow_pos = next;
                 (next, velocity)
             }
-        };
-
-        let wind = self.editor.wind;
-        self.system.set_wind(wind);
-        self.wind_offset[0] += wind[0] * delta_time * 0.5;
-        self.wind_offset[1] -= wind[1] * delta_time * 0.5;
-        let effective = [
-            motion_velocity[0] - wind[0],
-            motion_velocity[1] - wind[1],
-            motion_velocity[2] - wind[2],
-        ];
-        self.system
-            .set_emitter_motion(self.preview_id, origin, effective);
-        self.system.update(delta_time);
-        if self.system.is_empty() {
-            self.preview_id = self.system.spawn(PREVIEW, origin);
         }
+    }
 
+    fn update_cameras(&self, wind: [f32; 3]) {
         let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
         let center = [0.0, PREVIEW_TARGET_Y, 0.0];
         let eye = if self.editor.motion_mode == PreviewMotion::MouseFollow {
@@ -451,7 +421,7 @@ impl State {
             let pitch = self.editor.pitch;
             [
                 PREVIEW_DISTANCE * pitch.cos() * yaw.sin(),
-                center[1] + PREVIEW_DISTANCE * pitch.sin(),
+                PREVIEW_DISTANCE.mul_add(pitch.sin(), center[1]),
                 PREVIEW_DISTANCE * pitch.cos() * yaw.cos(),
             ]
         };
@@ -471,13 +441,53 @@ impl State {
             look_at(gizmo_eye, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         );
         self.axes.set_camera(&self.queue, gizmo_view_projection);
-        let wind_speed = (wind[0] * wind[0] + wind[1] * wind[1] + wind[2] * wind[2]).sqrt();
+        let wind_speed = wind[2]
+            .mul_add(wind[2], wind[0].mul_add(wind[0], wind[1] * wind[1]))
+            .sqrt();
         self.wind.set_state(
             &self.queue,
             self.wind_offset,
             aspect,
             (wind_speed * 0.05).min(0.18),
         );
+    }
+
+    fn render(&mut self) {
+        let now = Instant::now();
+        let delta_time = (now - self.last_frame).as_secs_f32().min(0.1);
+        self.last_frame = now;
+
+        let reloaded = self.editor.poll_reload();
+        let mut changed = false;
+        let mut panel_width = 0.0;
+        let editor = &mut self.editor;
+        self.overlay.run(&self.window, |ui| {
+            (changed, panel_width) = build_ui(ui, editor);
+        });
+        self.panel_width = panel_width * self.window.scale_factor() as f32;
+        if changed || reloaded {
+            self.system.register(PREVIEW, self.editor.effect.clone());
+        }
+
+        let (origin, motion_velocity) = self.step_motion(delta_time);
+
+        let wind = self.editor.wind;
+        self.system.set_wind(wind);
+        self.wind_offset[0] += wind[0] * delta_time * 0.5;
+        self.wind_offset[1] -= wind[1] * delta_time * 0.5;
+        let effective = [
+            motion_velocity[0] - wind[0],
+            motion_velocity[1] - wind[1],
+            motion_velocity[2] - wind[2],
+        ];
+        self.system
+            .set_emitter_motion(self.preview_id, origin, effective);
+        self.system.update(delta_time);
+        if self.system.is_empty() {
+            self.preview_id = self.system.spawn(PREVIEW, origin);
+        }
+
+        self.update_cameras(wind);
         let draws = self.system.collect();
         self.renderer.prepare(&self.device, &self.queue, &draws);
 
@@ -589,14 +599,14 @@ fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
 
 fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
     [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
+        a[1].mul_add(b[2], -(a[2] * b[1])),
+        a[2].mul_add(b[0], -(a[0] * b[2])),
+        a[0].mul_add(b[1], -(a[1] * b[0])),
     ]
 }
 
 fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    a[2].mul_add(b[2], a[0].mul_add(b[0], a[1] * b[1]))
 }
 
 fn normalize(v: [f32; 3]) -> [f32; 3] {

@@ -8,13 +8,18 @@ use simple_vectors::Vector;
 type Vec3 = Vector<f32, 3>;
 
 fn length(v: Vec3) -> f32 {
-    let [x, y, z]: [f32; 3] = v.into();
-    (x * x + y * y + z * z).sqrt()
+    (v * v).sqrt()
 }
 
 fn normalize(v: Vec3) -> Vec3 {
     let len = length(v);
     if len > 1e-6 { v / len } else { v }
+}
+
+fn drain(accumulator: &mut f32, limit: usize) -> u32 {
+    let owed = accumulator.floor();
+    *accumulator -= owed;
+    owed.clamp(0.0, limit as f32) as u32
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,12 +53,14 @@ impl Curve {
         }
     }
 
+    #[must_use]
     pub fn linear(start: f32, end: f32) -> Self {
         Self {
             keys: vec![[0.0, start], [1.0, end]],
         }
     }
 
+    #[must_use]
     pub fn from_keys(mut keys: Vec<[f32; 2]>) -> Self {
         keys.sort_by(|a, b| a[0].total_cmp(&b[0]));
         if keys.is_empty() {
@@ -63,6 +70,7 @@ impl Curve {
         }
     }
 
+    #[must_use]
     pub fn keys(&self) -> &[[f32; 2]] {
         &self.keys
     }
@@ -83,6 +91,7 @@ impl Curve {
         }
     }
 
+    #[must_use]
     pub fn sample(&self, time: f32) -> f32 {
         let &[first_time, first_value] = &self.keys[0];
         if time <= first_time {
@@ -102,7 +111,7 @@ impl Curve {
                 } else {
                     0.0
                 };
-                return left_value + (right_value - left_value) * blend;
+                return (right_value - left_value).mul_add(blend, left_value);
             }
         }
         last_value
@@ -115,12 +124,14 @@ pub struct Gradient {
 }
 
 impl Gradient {
+    #[must_use]
     pub fn linear(start: [f32; 4], end: [f32; 4]) -> Self {
         Self {
             keys: vec![(0.0, start), (1.0, end)],
         }
     }
 
+    #[must_use]
     pub fn from_stops(mut keys: Vec<(f32, [f32; 4])>) -> Self {
         keys.sort_by(|a, b| a.0.total_cmp(&b.0));
         if keys.is_empty() {
@@ -130,6 +141,7 @@ impl Gradient {
         }
     }
 
+    #[must_use]
     pub fn stops(&self) -> &[(f32, [f32; 4])] {
         &self.keys
     }
@@ -156,6 +168,7 @@ impl Gradient {
         }
     }
 
+    #[must_use]
     pub fn sample(&self, time: f32) -> [f32; 4] {
         let (first_time, first_color) = self.keys[0];
         if time <= first_time {
@@ -177,8 +190,8 @@ impl Gradient {
                 };
                 let mut result = [0.0; 4];
                 for channel in 0..4 {
-                    result[channel] =
-                        left_color[channel] + (right_color[channel] - left_color[channel]) * blend;
+                    result[channel] = (right_color[channel] - left_color[channel])
+                        .mul_add(blend, left_color[channel]);
                 }
                 return result;
             }
@@ -227,7 +240,14 @@ pub struct ParticleEffect {
 }
 
 impl ParticleEffect {
-    #[allow(clippy::expect_used)]
+    /// Reads and parses a `.particle` file.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the file cannot be read. Use [`Self::reload_if_changed`] to get
+    /// `None` instead of a panic on unreadable files.
+    #[expect(clippy::expect_used)]
+    #[must_use]
     pub fn load(path: &Path) -> Self {
         let content = std::fs::read_to_string(path).expect("failed to read .particle file");
         Self::parse(&content)
@@ -245,6 +265,7 @@ impl ParticleEffect {
         Some(Self::parse(&content))
     }
 
+    #[must_use]
     pub fn parse(content: &str) -> Self {
         let mut path = Vec::new();
         let mut effect = Self {
@@ -485,7 +506,7 @@ fn parse_shape(value: &str) -> EmitterShape {
     }
 }
 
-fn set_shape_radius(shape: &mut EmitterShape, value: f32) {
+const fn set_shape_radius(shape: &mut EmitterShape, value: f32) {
     match shape {
         EmitterShape::Sphere { radius }
         | EmitterShape::Hemisphere { radius }
@@ -496,7 +517,7 @@ fn set_shape_radius(shape: &mut EmitterShape, value: f32) {
     }
 }
 
-fn set_shape_angle(shape: &mut EmitterShape, value: f32) {
+const fn set_shape_angle(shape: &mut EmitterShape, value: f32) {
     if let EmitterShape::Cone { angle, .. } = shape {
         *angle = value;
     }
@@ -528,11 +549,11 @@ struct Rng {
 }
 
 impl Rng {
-    fn new(seed: u32) -> Self {
+    const fn new(seed: u32) -> Self {
         Self { state: seed | 1 }
     }
 
-    fn next_u32(&mut self) -> u32 {
+    const fn next_u32(&mut self) -> u32 {
         let mut x = self.state;
         x ^= x << 13;
         x ^= x >> 17;
@@ -547,11 +568,11 @@ impl Rng {
 
     fn range(&mut self, bounds: [f32; 2]) -> f32 {
         let [min, max] = bounds;
-        min + (max - min) * self.unit()
+        (max - min).mul_add(self.unit(), min)
     }
 
     fn direction(&mut self) -> Vec3 {
-        let z = self.unit() * 2.0 - 1.0;
+        let z = self.unit().mul_add(2.0, -1.0);
         let azimuth = self.unit() * std::f32::consts::TAU;
         let radius = (1.0 - z * z).max(0.0).sqrt();
         Vec3::from([radius * azimuth.cos(), z, radius * azimuth.sin()])
@@ -585,7 +606,8 @@ pub struct Emitter {
 }
 
 impl Emitter {
-    pub fn new(seed: u32) -> Self {
+    #[must_use]
+    pub const fn new(seed: u32) -> Self {
         Self {
             particles: Vec::new(),
             spawn_accumulator: 0.0,
@@ -596,11 +618,12 @@ impl Emitter {
         }
     }
 
-    pub fn finished(&self) -> bool {
+    #[must_use]
+    pub const fn finished(&self) -> bool {
         !self.emitting && self.particles.is_empty()
     }
 
-    pub fn stop(&mut self) {
+    pub const fn stop(&mut self) {
         self.emitting = false;
     }
 
@@ -623,15 +646,13 @@ impl Emitter {
             }
             if effect.rate > 0.0 {
                 self.spawn_accumulator += effect.rate * delta_time;
-                while self.spawn_accumulator >= 1.0 {
-                    self.spawn_accumulator -= 1.0;
+                for _ in 0..drain(&mut self.spawn_accumulator, effect.max_particles) {
                     self.spawn(effect, origin);
                 }
             }
             if effect.rate_distance > 0.0 {
                 self.distance_accumulator += effect.rate_distance * length(velocity) * delta_time;
-                while self.distance_accumulator >= 1.0 {
-                    self.distance_accumulator -= 1.0;
+                for _ in 0..drain(&mut self.distance_accumulator, effect.max_particles) {
                     self.spawn(effect, origin);
                 }
             }
@@ -640,7 +661,7 @@ impl Emitter {
             }
         }
 
-        let drag = (1.0 - effect.drag * delta_time).max(0.0);
+        let drag = (effect.drag.mul_add(-delta_time, 1.0)).max(0.0);
         let mut index = 0;
         while index < self.particles.len() {
             let particle = &mut self.particles[index];
@@ -783,6 +804,7 @@ impl Default for ParticleSystem {
 }
 
 impl ParticleSystem {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             effects: HashMap::new(),
@@ -842,10 +864,12 @@ impl ParticleSystem {
         });
     }
 
-    pub fn is_empty(&self) -> bool {
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
         self.emitters.is_empty()
     }
 
+    #[must_use]
     pub fn collect(&self) -> Vec<EffectDraw> {
         let mut by_effect: HashMap<&str, Vec<ParticleRender>> = HashMap::new();
         for active in &self.emitters {

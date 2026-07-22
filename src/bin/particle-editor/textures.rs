@@ -11,7 +11,7 @@ pub fn grid_sheet() -> (Vec<u8>, u32, u32) {
         for column in 0..GRID_COLUMNS {
             let frame = row * GRID_COLUMNS + column;
             let progress = frame as f32 / (frame_count - 1) as f32;
-            let radius = (0.2 + 0.75 * progress) * CELL as f32 / 2.0;
+            let radius = 0.75f32.mul_add(progress, 0.2) * CELL as f32 / 2.0;
             let [red, green, blue] = hue(progress);
             for y in 0..CELL {
                 for x in 0..CELL {
