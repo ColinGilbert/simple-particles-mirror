@@ -20,6 +20,8 @@ egui-winit = { version = "0.34", optional = true }
 egui-wgpu = { version = "0.34", optional = true }
 pollster = { version = "0.4", optional = true }
 raw-window-handle = { version = "0.6", optional = true }
+matrix4 = { git = "https://gitlab.com/porky11/matrix4", optional = true }
+ga3 = { version = "0.3", optional = true }
 
 [features]
 default = []
@@ -32,6 +34,8 @@ editor = [
     "dep:egui-wgpu",
     "dep:pollster",
     "dep:raw-window-handle",
+    "dep:matrix4",
+    "dep:ga3",
 ]
 
 [[bin]]

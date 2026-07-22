@@ -13,7 +13,9 @@ use std::time::{Instant, SystemTime};
 
 use axes::AxisRenderer;
 use egui_wgpu::ScreenDescriptor;
+use ga3::Vector;
 use locale::t;
+use matrix4::Matrix4;
 use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
 use simple_particles::{EmitterId, ParticleSystem, render::ParticleRenderer};
 use ui::build_ui;
@@ -29,6 +31,8 @@ const PREVIEW_DISTANCE: f32 = 5.0;
 const PREVIEW_TARGET_Y: f32 = 0.5;
 const PREVIEW_DEFAULT_YAW: f32 = 0.0;
 const PREVIEW_DEFAULT_PITCH: f32 = 0.35;
+const GIZMO_DISTANCE: f32 = 4.0;
+const GIZMO_EXTENT: f32 = 1.4;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PreviewMotion {
@@ -413,34 +417,38 @@ impl State {
 
     fn update_cameras(&self, wind: [f32; 3]) {
         let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
-        let center = [0.0, PREVIEW_TARGET_Y, 0.0];
+        let center = Vector::new(0.0, PREVIEW_TARGET_Y, 0.0);
         let eye = if self.editor.motion_mode == PreviewMotion::MouseFollow {
-            [0.0, PREVIEW_TARGET_Y, PREVIEW_DISTANCE]
+            Vector::new(0.0, PREVIEW_TARGET_Y, PREVIEW_DISTANCE)
         } else {
             let yaw = self.editor.yaw;
             let pitch = self.editor.pitch;
-            [
+            Vector::new(
                 PREVIEW_DISTANCE * pitch.cos() * yaw.sin(),
-                PREVIEW_DISTANCE.mul_add(pitch.sin(), center[1]),
+                PREVIEW_DISTANCE.mul_add(pitch.sin(), PREVIEW_TARGET_Y),
                 PREVIEW_DISTANCE * pitch.cos() * yaw.cos(),
-            ]
+            )
         };
-        let mut projection = perspective(PREVIEW_FOV.to_radians(), aspect, 0.1, 100.0);
-        projection[2][0] = -self.panel_width / self.config.width.max(1) as f32;
-        let view_projection = multiply(projection, look_at(eye, center, [0.0, 1.0, 0.0]));
-        self.renderer.set_camera(&self.queue, view_projection);
+        let up = Vector::new(0.0, 1.0, 0.0);
 
-        let view_direction = normalize(sub(eye, center));
-        let gizmo_eye = [
-            view_direction[0] * 4.0,
-            view_direction[1] * 4.0,
-            view_direction[2] * 4.0,
-        ];
-        let gizmo_view_projection = multiply(
-            orthographic(1.4, 0.1, 10.0),
-            look_at(gizmo_eye, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        );
-        self.axes.set_camera(&self.queue, gizmo_view_projection);
+        let mut columns =
+            Matrix4::perspective(PREVIEW_FOV.to_radians(), aspect, 0.1, 100.0).columns();
+        columns[2][0] = -self.panel_width / self.config.width.max(1) as f32;
+        let view_projection = Matrix4::from_columns(columns) * Matrix4::look_at(eye, center, up);
+        self.renderer
+            .set_camera(&self.queue, view_projection.columns());
+
+        let gizmo_eye = (eye - center) * (GIZMO_DISTANCE / PREVIEW_DISTANCE);
+        let gizmo_view_projection = Matrix4::orthographic(
+            -GIZMO_EXTENT,
+            GIZMO_EXTENT,
+            -GIZMO_EXTENT,
+            GIZMO_EXTENT,
+            0.1,
+            10.0,
+        ) * Matrix4::look_at(gizmo_eye, Vector::new(0.0, 0.0, 0.0), up);
+        self.axes
+            .set_camera(&self.queue, gizmo_view_projection.columns());
         let wind_speed = wind[2]
             .mul_add(wind[2], wind[0].mul_add(wind[0], wind[1] * wind[1]))
             .sqrt();
@@ -549,72 +557,6 @@ impl State {
 
         self.window.pre_present_notify();
         frame.present();
-    }
-}
-
-fn perspective(fovy: f32, aspect: f32, near: f32, far: f32) -> [[f32; 4]; 4] {
-    let focal = 1.0 / (fovy / 2.0).tan();
-    [
-        [focal / aspect, 0.0, 0.0, 0.0],
-        [0.0, focal, 0.0, 0.0],
-        [0.0, 0.0, far / (near - far), -1.0],
-        [0.0, 0.0, near * far / (near - far), 0.0],
-    ]
-}
-
-fn orthographic(half_extent: f32, near: f32, far: f32) -> [[f32; 4]; 4] {
-    [
-        [1.0 / half_extent, 0.0, 0.0, 0.0],
-        [0.0, 1.0 / half_extent, 0.0, 0.0],
-        [0.0, 0.0, 1.0 / (near - far), 0.0],
-        [0.0, 0.0, near / (near - far), 1.0],
-    ]
-}
-
-fn look_at(eye: [f32; 3], center: [f32; 3], up: [f32; 3]) -> [[f32; 4]; 4] {
-    let forward = normalize(sub(center, eye));
-    let side = normalize(cross(forward, up));
-    let upward = cross(side, forward);
-    [
-        [side[0], upward[0], -forward[0], 0.0],
-        [side[1], upward[1], -forward[1], 0.0],
-        [side[2], upward[2], -forward[2], 0.0],
-        [-dot(side, eye), -dot(upward, eye), dot(forward, eye), 1.0],
-    ]
-}
-
-fn multiply(a: [[f32; 4]; 4], b: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
-    let mut result = [[0.0; 4]; 4];
-    for (column_index, column) in b.iter().enumerate() {
-        for row in 0..4 {
-            result[column_index][row] = (0..4).map(|k| a[k][row] * column[k]).sum();
-        }
-    }
-    result
-}
-
-fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [
-        a[1].mul_add(b[2], -(a[2] * b[1])),
-        a[2].mul_add(b[0], -(a[0] * b[2])),
-        a[0].mul_add(b[1], -(a[1] * b[0])),
-    ]
-}
-
-fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[2].mul_add(b[2], a[0].mul_add(b[0], a[1] * b[1]))
-}
-
-fn normalize(v: [f32; 3]) -> [f32; 3] {
-    let length = dot(v, v).sqrt();
-    if length > 1e-6 {
-        [v[0] / length, v[1] / length, v[2] / length]
-    } else {
-        v
     }
 }
 
