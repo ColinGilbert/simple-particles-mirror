@@ -1,23 +1,21 @@
-use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
+use crate::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
 
-use crate::{
-    Editor, PREVIEW_DEFAULT_PITCH, PREVIEW_DEFAULT_YAW, PreviewMotion,
-    locale::{self, Language, t},
-};
+use super::app::{Editor, PREVIEW_DEFAULT_PITCH, PREVIEW_DEFAULT_YAW, PreviewMotion};
+use super::locale::{self, Language, t};
 
-pub fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> (bool, f32) {
+pub fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
     let mut changed = false;
     if !editor.panel_open {
-        egui::Area::new(egui::Id::new("reopen"))
-            .fixed_pos([8.0, 8.0])
+        egui::Area::new(root.id().with("reopen"))
+            .fixed_pos(root.min_rect().min + egui::vec2(8.0, 8.0))
             .show(root.ctx(), |ui| {
                 if ui.button("☰").clicked() {
                     editor.panel_open = true;
                 }
             });
-        return (false, 0.0);
+        return false;
     }
-    let panel = egui::Panel::left("controls")
+    editor_panels::left(root, "controls")
         .default_size(280.0)
         .show_inside(root, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -26,7 +24,7 @@ pub fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> (bool, f32) {
                 preview_section(ui, editor);
             });
         });
-    (changed, panel.response.rect.width())
+    changed
 }
 
 fn file_section(ui: &mut egui::Ui, editor: &mut Editor) -> bool {

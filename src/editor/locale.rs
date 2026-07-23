@@ -26,8 +26,8 @@ impl Language {
 
     const fn data(self) -> &'static str {
         match self {
-            Self::English => include_str!("../../../assets/lang/en.lang"),
-            Self::German => include_str!("../../../assets/lang/de.lang"),
+            Self::English => include_str!("../../assets/lang/en.lang"),
+            Self::German => include_str!("../../assets/lang/de.lang"),
         }
     }
 }

@@ -1,67 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod axes;
-mod locale;
-mod textures;
-mod ui;
-mod wind;
-
-use std::path::Path;
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
 
-use axes::AxisRenderer;
 use egui_wgpu::ScreenDescriptor;
-use ga3::Vector;
-use locale::t;
-use matrix4::Matrix4;
-use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
-use simple_particles::{EmitterId, ParticleSystem, render::ParticleRenderer};
-use ui::build_ui;
-use wind::WindRenderer;
+use simple_particles::editor::EditorApp;
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
-
-const PREVIEW: &str = "preview";
-const PREVIEW_FOV: f32 = 45.0;
-const PREVIEW_DISTANCE: f32 = 5.0;
-const PREVIEW_TARGET_Y: f32 = 0.5;
-const PREVIEW_DEFAULT_YAW: f32 = 0.0;
-const PREVIEW_DEFAULT_PITCH: f32 = 0.35;
-const GIZMO_DISTANCE: f32 = 4.0;
-const GIZMO_EXTENT: f32 = 1.4;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PreviewMotion {
-    Static,
-    Circle,
-    Line,
-    Figure8,
-    MouseFollow,
-}
-
-impl PreviewMotion {
-    const ALL: [Self; 5] = [
-        Self::Static,
-        Self::Circle,
-        Self::Line,
-        Self::Figure8,
-        Self::MouseFollow,
-    ];
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Static => t("motion_static"),
-            Self::Circle => t("motion_circle"),
-            Self::Line => t("motion_line"),
-            Self::Figure8 => t("motion_figure8"),
-            Self::MouseFollow => t("motion_mouse_follow"),
-        }
-    }
-}
 
 fn main() -> ExitCode {
     let event_loop = match EventLoop::new() {
@@ -108,25 +56,6 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => state.resize(size.width, size.height),
-            WindowEvent::MouseInput {
-                state: element_state,
-                button: MouseButton::Left,
-                ..
-            } => {
-                state.rotating = element_state == ElementState::Pressed
-                    && !consumed
-                    && state.editor.motion_mode != PreviewMotion::MouseFollow;
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                let pointer = [position.x as f32, position.y as f32];
-                if state.rotating {
-                    state.editor.yaw -= (pointer[0] - state.pointer[0]) * 0.01;
-                    state.editor.pitch = (pointer[1] - state.pointer[1])
-                        .mul_add(0.01, state.editor.pitch)
-                        .clamp(-1.4, 1.4);
-                }
-                state.pointer = pointer;
-            }
             WindowEvent::RedrawRequested => state.render(),
             _ => {}
         }
@@ -139,116 +68,14 @@ impl ApplicationHandler for App {
     }
 }
 
-struct Editor {
-    effect: ParticleEffect,
-    motion_mode: PreviewMotion,
-    path_speed: f32,
-    follow_delay: f32,
-    wind: [f32; 3],
-    background: [f32; 3],
-    path: String,
-    last_modified: Option<SystemTime>,
-    status: String,
-    panel_open: bool,
-    show_axes: bool,
-    yaw: f32,
-    pitch: f32,
-}
-
-impl Editor {
-    fn default_editor() -> Self {
-        let mut editor = Self {
-            effect: ParticleEffect::parse(""),
-            motion_mode: PreviewMotion::Static,
-            path_speed: 1.0,
-            follow_delay: 0.15,
-            wind: [0.0, 0.0, 0.0],
-            background: [0.04, 0.05, 0.08],
-            path: "effect.particle".to_string(),
-            last_modified: None,
-            status: String::new(),
-            panel_open: true,
-            show_axes: true,
-            yaw: PREVIEW_DEFAULT_YAW,
-            pitch: PREVIEW_DEFAULT_PITCH,
-        };
-        editor.effect.texture = "circle".to_string();
-        editor.effect.blend = BlendMode::Additive;
-        editor.effect.looping = true;
-        editor.effect.rate = 80.0;
-        editor.effect.shape = EmitterShape::Cone {
-            radius: 0.1,
-            angle: 28.0,
-        };
-        editor.effect.lifetime = [0.6, 1.0];
-        editor.effect.speed = [2.0, 3.5];
-        editor.effect.gravity = [0.0, -2.0, 0.0].into();
-        editor.effect.drag = 0.1;
-        editor.effect.spin = [-2.0, 2.0];
-        editor.effect.size = Curve::linear(0.3, 0.0);
-        editor.effect.color = Gradient::linear([1.0, 0.85, 0.4, 1.0], [1.0, 0.3, 0.1, 0.0]);
-        editor
-    }
-
-    fn save(&mut self) {
-        match std::fs::write(&self.path, self.effect.to_string()) {
-            Ok(()) => {
-                self.stamp_file();
-                self.status = format!("{}: {}", t("status_saved"), self.path);
-            }
-            Err(error) => self.status = format!("{}: {error}", t("status_save_failed")),
-        }
-    }
-
-    fn load(&mut self) {
-        match std::fs::read_to_string(&self.path) {
-            Ok(content) => {
-                self.effect = ParticleEffect::parse(&content);
-                self.stamp_file();
-                self.status = format!("{}: {}", t("status_loaded"), self.path);
-            }
-            Err(error) => self.status = format!("{}: {error}", t("status_load_failed")),
-        }
-    }
-
-    fn stamp_file(&mut self) {
-        self.last_modified = std::fs::metadata(&self.path)
-            .and_then(|metadata| metadata.modified())
-            .ok();
-    }
-
-    fn poll_reload(&mut self) -> bool {
-        let Some(effect) =
-            ParticleEffect::reload_if_changed(Path::new(&self.path), &mut self.last_modified)
-        else {
-            return false;
-        };
-        self.effect = effect;
-        self.status = format!("{}: {}", t("status_reloaded"), self.path);
-        true
-    }
-}
-
 struct State {
     window: Arc<Window>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
-    renderer: ParticleRenderer,
-    axes: AxisRenderer,
-    wind: WindRenderer,
-    wind_offset: [f32; 2],
-    system: ParticleSystem,
     overlay: EguiOverlay,
-    editor: Editor,
-    rotating: bool,
-    preview_id: EmitterId,
-    motion_phase: f32,
-    pointer: [f32; 2],
-    follow_pos: [f32; 3],
-    panel_width: f32,
-    last_frame: Instant,
+    app: EditorApp,
 }
 
 impl State {
@@ -299,28 +126,11 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let mut renderer = ParticleRenderer::new(&device, &queue, format, None);
-        let (grid_pixels, grid_width, grid_height) = textures::grid_sheet();
-        renderer.register_texture(
-            &device,
-            &queue,
-            "grid",
-            &grid_pixels,
-            grid_width,
-            grid_height,
-        );
-        let axes = AxisRenderer::new(&device, format);
-        let wind = WindRenderer::new(&device, format);
         let overlay = EguiOverlay::new(&device, format, &window);
-
-        let mut editor = Editor::default_editor();
+        let mut app = EditorApp::new(&device, &queue, format);
         if let Some(path) = std::env::args().nth(1) {
-            editor.path = path;
-            editor.load();
+            app.open(PathBuf::from(path));
         }
-        let mut system = ParticleSystem::new();
-        system.register(PREVIEW, editor.effect.clone());
-        let preview_id = system.spawn(PREVIEW, [0.0, 0.0, 0.0]);
 
         Ok(Self {
             window,
@@ -328,20 +138,8 @@ impl State {
             queue,
             surface,
             config,
-            renderer,
-            axes,
-            wind,
-            wind_offset: [0.0, 0.0],
-            system,
             overlay,
-            editor,
-            rotating: false,
-            preview_id,
-            motion_phase: 0.0,
-            pointer: [0.0, 0.0],
-            follow_pos: [0.0, 0.0, 0.0],
-            panel_width: 0.0,
-            last_frame: Instant::now(),
+            app,
         })
     }
 
@@ -354,150 +152,11 @@ impl State {
         self.surface.configure(&self.device, &self.config);
     }
 
-    fn pointer_world(&self) -> [f32; 3] {
-        let width = self.config.width.max(1) as f32;
-        let height = self.config.height.max(1) as f32;
-        let ndc_x = (self.pointer[0] / width).mul_add(2.0, -1.0) - self.panel_width / width;
-        let ndc_y = (self.pointer[1] / height).mul_add(2.0, -1.0);
-        let half_height = PREVIEW_DISTANCE * (PREVIEW_FOV.to_radians() / 2.0).tan();
-        let half_width = half_height * (width / height);
-        [
-            ndc_x * half_width,
-            PREVIEW_TARGET_Y - ndc_y * half_height,
-            0.0,
-        ]
-    }
-
-    fn step_motion(&mut self, delta_time: f32) -> ([f32; 3], [f32; 3]) {
-        let radius = 1.5_f32;
-        let omega = 2.0_f32 * self.editor.path_speed.max(0.0);
-        match self.editor.motion_mode {
-            PreviewMotion::Static => ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
-            PreviewMotion::Circle => {
-                self.motion_phase += omega * delta_time;
-                let (sin, cos) = self.motion_phase.sin_cos();
-                (
-                    [cos * radius, 0.0, sin * radius],
-                    [-sin * radius * omega, 0.0, cos * radius * omega],
-                )
-            }
-            PreviewMotion::Line => {
-                self.motion_phase += omega * delta_time;
-                let (sin, cos) = self.motion_phase.sin_cos();
-                ([sin * radius, 0.0, 0.0], [cos * radius * omega, 0.0, 0.0])
-            }
-            PreviewMotion::Figure8 => {
-                self.motion_phase += omega * delta_time;
-                let (sin, cos) = self.motion_phase.sin_cos();
-                (
-                    [sin * radius, 0.0, sin * cos * radius],
-                    [
-                        cos * radius * omega,
-                        0.0,
-                        cos.mul_add(cos, -(sin * sin)) * radius * omega,
-                    ],
-                )
-            }
-            PreviewMotion::MouseFollow => {
-                let target = self.pointer_world();
-                let alpha = (delta_time / self.editor.follow_delay.max(0.01)).min(1.0);
-                let mut next = self.follow_pos;
-                let mut velocity = [0.0; 3];
-                for axis in 0..3 {
-                    next[axis] += (target[axis] - next[axis]) * alpha;
-                    if delta_time > 1e-5 {
-                        velocity[axis] = (next[axis] - self.follow_pos[axis]) / delta_time;
-                    }
-                }
-                self.follow_pos = next;
-                (next, velocity)
-            }
-        }
-    }
-
-    fn update_cameras(&self, wind: [f32; 3]) {
-        let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
-        let center = Vector::new(0.0, PREVIEW_TARGET_Y, 0.0);
-        let eye = if self.editor.motion_mode == PreviewMotion::MouseFollow {
-            Vector::new(0.0, PREVIEW_TARGET_Y, PREVIEW_DISTANCE)
-        } else {
-            let yaw = self.editor.yaw;
-            let pitch = self.editor.pitch;
-            Vector::new(
-                PREVIEW_DISTANCE * pitch.cos() * yaw.sin(),
-                PREVIEW_DISTANCE.mul_add(pitch.sin(), PREVIEW_TARGET_Y),
-                PREVIEW_DISTANCE * pitch.cos() * yaw.cos(),
-            )
-        };
-        let up = Vector::new(0.0, 1.0, 0.0);
-
-        let mut columns =
-            Matrix4::perspective(PREVIEW_FOV.to_radians(), aspect, 0.1, 100.0).columns();
-        columns[2][0] = -self.panel_width / self.config.width.max(1) as f32;
-        let view_projection = Matrix4::from_columns(columns) * Matrix4::look_at(eye, center, up);
-        self.renderer
-            .set_camera(&self.queue, view_projection.columns());
-
-        let gizmo_eye = (eye - center) * (GIZMO_DISTANCE / PREVIEW_DISTANCE);
-        let gizmo_view_projection = Matrix4::orthographic(
-            -GIZMO_EXTENT,
-            GIZMO_EXTENT,
-            -GIZMO_EXTENT,
-            GIZMO_EXTENT,
-            0.1,
-            10.0,
-        ) * Matrix4::look_at(gizmo_eye, Vector::new(0.0, 0.0, 0.0), up);
-        self.axes
-            .set_camera(&self.queue, gizmo_view_projection.columns());
-        let wind_speed = wind[2]
-            .mul_add(wind[2], wind[0].mul_add(wind[0], wind[1] * wind[1]))
-            .sqrt();
-        self.wind.set_state(
-            &self.queue,
-            self.wind_offset,
-            aspect,
-            (wind_speed * 0.05).min(0.18),
-        );
-    }
-
     fn render(&mut self) {
-        let now = Instant::now();
-        let delta_time = (now - self.last_frame).as_secs_f32().min(0.1);
-        self.last_frame = now;
-
-        let reloaded = self.editor.poll_reload();
-        let mut changed = false;
-        let mut panel_width = 0.0;
-        let editor = &mut self.editor;
+        let app = &mut self.app;
         self.overlay.run(&self.window, |ui| {
-            (changed, panel_width) = build_ui(ui, editor);
+            app.editor_ui(ui);
         });
-        self.panel_width = panel_width * self.window.scale_factor() as f32;
-        if changed || reloaded {
-            self.system.register(PREVIEW, self.editor.effect.clone());
-        }
-
-        let (origin, motion_velocity) = self.step_motion(delta_time);
-
-        let wind = self.editor.wind;
-        self.system.set_wind(wind);
-        self.wind_offset[0] += wind[0] * delta_time * 0.5;
-        self.wind_offset[1] -= wind[1] * delta_time * 0.5;
-        let effective = [
-            motion_velocity[0] - wind[0],
-            motion_velocity[1] - wind[1],
-            motion_velocity[2] - wind[2],
-        ];
-        self.system
-            .set_emitter_motion(self.preview_id, origin, effective);
-        self.system.update(delta_time);
-        if self.system.is_empty() {
-            self.preview_id = self.system.spawn(PREVIEW, origin);
-        }
-
-        self.update_cameras(wind);
-        let draws = self.system.collect();
-        self.renderer.prepare(&self.device, &self.queue, &draws);
 
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
@@ -508,47 +167,6 @@ impl State {
             }
             _ => return,
         };
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let background = self.editor.background.map(f64::from);
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("particle_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: background[0],
-                            g: background[1],
-                            b: background[2],
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            self.wind.draw(&mut render_pass);
-            self.renderer.draw(&mut render_pass);
-            if self.editor.show_axes {
-                self.axes.draw(
-                    &mut render_pass,
-                    self.config.width as f32,
-                    self.config.height as f32,
-                );
-            }
-        }
-        self.queue.submit(Some(encoder.finish()));
 
         let commands = self
             .overlay
@@ -635,7 +253,7 @@ impl EguiOverlay {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
                     },
                     depth_slice: None,

@@ -22,6 +22,7 @@ pollster = { version = "0.4", optional = true }
 raw-window-handle = { version = "0.6", optional = true }
 matrix4 = { git = "https://gitlab.com/porky11/matrix4", optional = true }
 ga3 = { version = "0.3", optional = true }
+editor-panels = { git = "https://gitlab.com/porky11/editor-panels", optional = true }
 
 [features]
 default = []
@@ -36,6 +37,7 @@ editor = [
     "dep:raw-window-handle",
     "dep:matrix4",
     "dep:ga3",
+    "dep:editor-panels",
 ]
 
 [[bin]]
