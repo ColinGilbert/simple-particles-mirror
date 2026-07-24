@@ -28,7 +28,7 @@ pub fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
 }
 
 fn file_section(ui: &mut egui::Ui, editor: &mut Editor) -> bool {
-    let mut changed = false;
+    let changed = false;
     ui.horizontal(|ui| {
         ui.heading(t("file"));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -47,7 +47,6 @@ fn file_section(ui: &mut egui::Ui, editor: &mut Editor) -> bool {
         }
         if ui.button(t("load")).clicked() {
             editor.load();
-            changed = true;
         }
     });
     if !editor.status.is_empty() {

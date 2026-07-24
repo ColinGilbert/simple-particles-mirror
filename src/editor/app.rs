@@ -81,6 +81,7 @@ impl PreviewMotion {
     }
 }
 
+#[expect(clippy::struct_excessive_bools)]
 pub struct Editor {
     pub effect: ParticleEffect,
     pub motion_mode: PreviewMotion,
@@ -95,6 +96,9 @@ pub struct Editor {
     pub show_axes: bool,
     pub yaw: f32,
     pub pitch: f32,
+    saved_path: Option<PathBuf>,
+    dirty: bool,
+    needs_register: bool,
 }
 
 impl Editor {
@@ -113,6 +117,9 @@ impl Editor {
             show_axes: true,
             yaw: PREVIEW_DEFAULT_YAW,
             pitch: PREVIEW_DEFAULT_PITCH,
+            saved_path: None,
+            dirty: false,
+            needs_register: false,
         };
         editor.effect.texture = "circle".to_string();
         editor.effect.blend = BlendMode::Additive;
@@ -135,6 +142,8 @@ impl Editor {
     pub fn save(&mut self) {
         match std::fs::write(&self.path, self.effect.to_string()) {
             Ok(()) => {
+                self.saved_path = Some(PathBuf::from(self.path.clone()));
+                self.dirty = false;
                 self.stamp_file();
                 self.status = format!("{}: {}", t("status_saved"), self.path);
             }
@@ -142,15 +151,43 @@ impl Editor {
         }
     }
 
+    pub fn save_to(&mut self, path: &Path) -> bool {
+        match std::fs::write(path, self.effect.to_string()) {
+            Ok(()) => {
+                self.path = path.display().to_string();
+                self.saved_path = Some(path.to_path_buf());
+                self.dirty = false;
+                self.stamp_file();
+                self.status = format!("{}: {}", t("status_saved"), self.path);
+                true
+            }
+            Err(error) => {
+                self.status = format!("{}: {error}", t("status_save_failed"));
+                false
+            }
+        }
+    }
+
     pub fn load(&mut self) {
         match std::fs::read_to_string(&self.path) {
             Ok(content) => {
                 self.effect = ParticleEffect::parse(&content);
+                self.saved_path = Some(PathBuf::from(self.path.clone()));
+                self.dirty = false;
+                self.needs_register = true;
                 self.stamp_file();
                 self.status = format!("{}: {}", t("status_loaded"), self.path);
             }
             Err(error) => self.status = format!("{}: {error}", t("status_load_failed")),
         }
+    }
+
+    pub fn saved_path(&self) -> Option<&Path> {
+        self.saved_path.as_deref()
+    }
+
+    pub const fn is_dirty(&self) -> bool {
+        self.dirty
     }
 
     fn stamp_file(&mut self) {
@@ -338,20 +375,43 @@ impl EditorApp {
         }
     }
 
-    #[expect(clippy::needless_pass_by_value)]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn open(&mut self, path: PathBuf) {
         self.editor.path = path.display().to_string();
+        self.editor.saved_path = Some(path);
+        self.editor.dirty = false;
         self.editor.load();
         self.system.register(PREVIEW, self.editor.effect.clone());
     }
 
     pub fn editor_ui(&mut self, ui: &mut egui::Ui) {
         let reloaded = self.editor.poll_reload();
+        if reloaded {
+            self.editor.dirty = false;
+        }
         let changed = build_ui(ui, &mut self.editor);
-        if changed || reloaded {
+        if changed {
+            self.editor.dirty = true;
+        }
+        if changed || reloaded || self.editor.needs_register {
             self.system.register(PREVIEW, self.editor.effect.clone());
+            self.editor.needs_register = false;
         }
         self.viewport_ui(ui);
+    }
+
+    pub fn save(&mut self, path: &Path) -> bool {
+        self.editor.save_to(path)
+    }
+
+    #[must_use]
+    pub fn path(&self) -> Option<&Path> {
+        self.editor.saved_path()
+    }
+
+    #[must_use]
+    pub const fn is_modified(&self) -> bool {
+        self.editor.is_dirty()
     }
 
     fn viewport_ui(&mut self, ui: &mut egui::Ui) {
