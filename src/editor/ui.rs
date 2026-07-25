@@ -75,14 +75,14 @@ fn parameter_section(ui: &mut egui::Ui, editor: &mut Editor) -> bool {
     ui.separator();
     ui.heading(t("parameters"));
     ui.label(t("parameters_hint"));
-    changed |= emission_fields(ui, &mut editor.effect);
+    changed |= emission_fields(ui, editor.effect_mut());
     ui.label(t("size_over_lifetime"));
-    changed |= curve_editor(ui, &mut editor.effect.size);
+    changed |= curve_editor(ui, &mut editor.effect_mut().size);
     ui.label(t("color_over_lifetime"));
-    changed |= gradient_editor(ui, &mut editor.effect.color);
-    let mut additive = matches!(editor.effect.blend, BlendMode::Additive);
+    changed |= gradient_editor(ui, &mut editor.effect_mut().color);
+    let mut additive = matches!(editor.effect().blend, BlendMode::Additive);
     if ui.checkbox(&mut additive, t("additive_blend")).changed() {
-        editor.effect.blend = if additive {
+        editor.effect_mut().blend = if additive {
             BlendMode::Additive
         } else {
             BlendMode::Alpha
@@ -91,15 +91,15 @@ fn parameter_section(ui: &mut egui::Ui, editor: &mut Editor) -> bool {
     }
     ui.label(t("texture"));
     egui::ComboBox::from_id_salt("texture")
-        .selected_text(&editor.effect.texture)
+        .selected_text(&editor.effect().texture)
         .show_ui(ui, |ui| {
             for option in ["circle", "grid"] {
                 if ui
-                    .selectable_label(editor.effect.texture == option, option)
+                    .selectable_label(editor.effect().texture == option, option)
                     .clicked()
-                    && editor.effect.texture != option
+                    && editor.effect().texture != option
                 {
-                    editor.effect.texture = option.to_string();
+                    editor.effect_mut().texture = option.to_string();
                     changed = true;
                 }
             }
@@ -108,21 +108,21 @@ fn parameter_section(ui: &mut egui::Ui, editor: &mut Editor) -> bool {
         ui.label(t("sheet"));
         changed |= ui
             .add(
-                egui::DragValue::new(&mut editor.effect.sheet[0])
+                egui::DragValue::new(&mut editor.effect_mut().sheet[0])
                     .range(1..=16)
                     .prefix(format!("{} ", t("sheet_columns"))),
             )
             .changed();
         changed |= ui
             .add(
-                egui::DragValue::new(&mut editor.effect.sheet[1])
+                egui::DragValue::new(&mut editor.effect_mut().sheet[1])
                     .range(1..=16)
                     .prefix(format!("{} ", t("sheet_rows"))),
             )
             .changed();
     });
     ui.label(t("emitter_shape"));
-    let shape = &mut editor.effect.shape;
+    let shape = &mut editor.effect_mut().shape;
     let current = shape_name(shape);
     egui::ComboBox::from_id_salt("shape")
         .selected_text(shape_label(current))

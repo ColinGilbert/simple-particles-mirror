@@ -1,6 +1,8 @@
+use std::convert::Infallible;
 use std::path::{Path, PathBuf};
-use std::time::{Instant, SystemTime};
+use std::time::Instant;
 
+use document_state::{DiskChange, Document, FileFormat};
 use ga3::Vector;
 use matrix4::Matrix4;
 
@@ -81,130 +83,96 @@ impl PreviewMotion {
     }
 }
 
-#[expect(clippy::struct_excessive_bools)]
+impl FileFormat for ParticleEffect {
+    type Error = Infallible;
+
+    fn load(bytes: &[u8], _path: Option<&Path>) -> Result<Self, Self::Error> {
+        let content = std::str::from_utf8(bytes).unwrap_or("");
+        Ok(Self::parse(content))
+    }
+
+    fn store(&self) -> Vec<u8> {
+        self.to_string().into_bytes()
+    }
+}
+
 pub struct Editor {
-    pub effect: ParticleEffect,
     pub motion_mode: PreviewMotion,
     pub path_speed: f32,
     pub follow_delay: f32,
     pub wind: [f32; 3],
     pub background: [f32; 3],
     pub path: String,
-    last_modified: Option<SystemTime>,
     pub status: String,
     pub panel_open: bool,
     pub show_axes: bool,
     pub yaw: f32,
     pub pitch: f32,
-    saved_path: Option<PathBuf>,
-    dirty: bool,
+    document: Document<ParticleEffect>,
     needs_register: bool,
 }
 
 impl Editor {
     fn default_editor() -> Self {
-        let mut editor = Self {
-            effect: ParticleEffect::parse(""),
+        let mut effect = ParticleEffect::parse("");
+        effect.texture = "circle".to_string();
+        effect.blend = BlendMode::Additive;
+        effect.looping = true;
+        effect.rate = 80.0;
+        effect.shape = EmitterShape::Cone {
+            radius: 0.1,
+            angle: 28.0,
+        };
+        effect.lifetime = [0.6, 1.0];
+        effect.speed = [2.0, 3.5];
+        effect.gravity = [0.0, -2.0, 0.0].into();
+        effect.drag = 0.1;
+        effect.spin = [-2.0, 2.0];
+        effect.size = Curve::linear(0.3, 0.0);
+        effect.color = Gradient::linear([1.0, 0.85, 0.4, 1.0], [1.0, 0.3, 0.1, 0.0]);
+        Self {
             motion_mode: PreviewMotion::Static,
             path_speed: 1.0,
             follow_delay: 0.15,
             wind: [0.0, 0.0, 0.0],
             background: [0.04, 0.05, 0.08],
             path: "effect.particle".to_string(),
-            last_modified: None,
             status: String::new(),
             panel_open: true,
             show_axes: true,
             yaw: PREVIEW_DEFAULT_YAW,
             pitch: PREVIEW_DEFAULT_PITCH,
-            saved_path: None,
-            dirty: false,
+            document: Document::new(effect),
             needs_register: false,
-        };
-        editor.effect.texture = "circle".to_string();
-        editor.effect.blend = BlendMode::Additive;
-        editor.effect.looping = true;
-        editor.effect.rate = 80.0;
-        editor.effect.shape = EmitterShape::Cone {
-            radius: 0.1,
-            angle: 28.0,
-        };
-        editor.effect.lifetime = [0.6, 1.0];
-        editor.effect.speed = [2.0, 3.5];
-        editor.effect.gravity = [0.0, -2.0, 0.0].into();
-        editor.effect.drag = 0.1;
-        editor.effect.spin = [-2.0, 2.0];
-        editor.effect.size = Curve::linear(0.3, 0.0);
-        editor.effect.color = Gradient::linear([1.0, 0.85, 0.4, 1.0], [1.0, 0.3, 0.1, 0.0]);
-        editor
+        }
+    }
+
+    pub const fn effect(&self) -> &ParticleEffect {
+        self.document.data()
+    }
+
+    pub const fn effect_mut(&mut self) -> &mut ParticleEffect {
+        self.document.data_mut()
     }
 
     pub fn save(&mut self) {
-        match std::fs::write(&self.path, self.effect.to_string()) {
+        match self.document.save_as(PathBuf::from(&self.path)) {
             Ok(()) => {
-                self.saved_path = Some(PathBuf::from(self.path.clone()));
-                self.dirty = false;
-                self.stamp_file();
                 self.status = format!("{}: {}", t("status_saved"), self.path);
             }
             Err(error) => self.status = format!("{}: {error}", t("status_save_failed")),
         }
     }
 
-    pub fn save_to(&mut self, path: &Path) -> bool {
-        match std::fs::write(path, self.effect.to_string()) {
-            Ok(()) => {
-                self.path = path.display().to_string();
-                self.saved_path = Some(path.to_path_buf());
-                self.dirty = false;
-                self.stamp_file();
-                self.status = format!("{}: {}", t("status_saved"), self.path);
-                true
-            }
-            Err(error) => {
-                self.status = format!("{}: {error}", t("status_save_failed"));
-                false
-            }
-        }
-    }
-
     pub fn load(&mut self) {
-        match std::fs::read_to_string(&self.path) {
-            Ok(content) => {
-                self.effect = ParticleEffect::parse(&content);
-                self.saved_path = Some(PathBuf::from(self.path.clone()));
-                self.dirty = false;
+        match Document::open(PathBuf::from(&self.path)) {
+            Ok(document) => {
+                self.document = document;
                 self.needs_register = true;
-                self.stamp_file();
                 self.status = format!("{}: {}", t("status_loaded"), self.path);
             }
             Err(error) => self.status = format!("{}: {error}", t("status_load_failed")),
         }
-    }
-
-    pub fn saved_path(&self) -> Option<&Path> {
-        self.saved_path.as_deref()
-    }
-
-    pub const fn is_dirty(&self) -> bool {
-        self.dirty
-    }
-
-    fn stamp_file(&mut self) {
-        self.last_modified = std::fs::metadata(&self.path)
-            .and_then(|metadata| metadata.modified())
-            .ok();
-    }
-
-    fn poll_reload(&mut self) -> bool {
-        let Some(effect) =
-            ParticleEffect::reload_if_changed(Path::new(&self.path), &mut self.last_modified)
-        else {
-            return false;
-        };
-        self.effect = effect;
-        self.status = format!("{}: {}", t("status_reloaded"), self.path);
-        true
     }
 }
 
@@ -353,7 +321,7 @@ impl EditorApp {
 
         let editor = Editor::default_editor();
         let mut system = ParticleSystem::new();
-        system.register(PREVIEW, editor.effect.clone());
+        system.register(PREVIEW, editor.effect().clone());
         let preview_id = system.spawn(PREVIEW, [0.0, 0.0, 0.0]);
 
         Self {
@@ -378,40 +346,53 @@ impl EditorApp {
     #[allow(clippy::needless_pass_by_value)]
     pub fn open(&mut self, path: PathBuf) {
         self.editor.path = path.display().to_string();
-        self.editor.saved_path = Some(path);
-        self.editor.dirty = false;
-        self.editor.load();
-        self.system.register(PREVIEW, self.editor.effect.clone());
+        match Document::open(&path) {
+            Ok(document) => {
+                self.editor.document = document;
+                self.editor.needs_register = true;
+                self.system.register(PREVIEW, self.editor.effect().clone());
+            }
+            Err(error) => {
+                self.editor.status = format!("{}: {error}", t("status_load_failed"));
+            }
+        }
     }
 
     pub fn editor_ui(&mut self, ui: &mut egui::Ui) {
-        let reloaded = self.editor.poll_reload();
-        if reloaded {
-            self.editor.dirty = false;
+        if matches!(self.editor.document.poll(), Some(DiskChange::Reloaded)) {
+            self.editor.needs_register = true;
+            self.editor.status = format!("{}: {}", t("status_reloaded"), self.editor.path);
         }
         let changed = build_ui(ui, &mut self.editor);
-        if changed {
-            self.editor.dirty = true;
-        }
-        if changed || reloaded || self.editor.needs_register {
-            self.system.register(PREVIEW, self.editor.effect.clone());
+        if changed || self.editor.needs_register {
+            self.system.register(PREVIEW, self.editor.effect().clone());
             self.editor.needs_register = false;
         }
         self.viewport_ui(ui);
     }
 
     pub fn save(&mut self, path: &Path) -> bool {
-        self.editor.save_to(path)
+        match self.editor.document.save_as(path) {
+            Ok(()) => {
+                self.editor.path = path.display().to_string();
+                self.editor.status = format!("{}: {}", t("status_saved"), self.editor.path);
+                true
+            }
+            Err(error) => {
+                self.editor.status = format!("{}: {error}", t("status_save_failed"));
+                false
+            }
+        }
     }
 
     #[must_use]
     pub fn path(&self) -> Option<&Path> {
-        self.editor.saved_path()
+        self.editor.document.path()
     }
 
     #[must_use]
     pub const fn is_modified(&self) -> bool {
-        self.editor.is_dirty()
+        self.editor.document.is_modified()
     }
 
     fn viewport_ui(&mut self, ui: &mut egui::Ui) {
