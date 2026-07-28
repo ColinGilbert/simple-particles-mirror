@@ -343,7 +343,7 @@ impl EditorApp {
         }
     }
 
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn open(&mut self, path: PathBuf) {
         self.editor.path = path.display().to_string();
         match Document::open(&path) {
