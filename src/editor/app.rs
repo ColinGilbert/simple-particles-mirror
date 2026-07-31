@@ -415,7 +415,7 @@ impl EditorApp {
             && response.dragged_by(egui::PointerButton::Primary)
         {
             let delta = response.drag_delta();
-            self.editor.yaw -= delta.x * 0.01;
+            self.editor.yaw = delta.x.mul_add(-0.01, self.editor.yaw);
             self.editor.pitch = delta.y.mul_add(0.01, self.editor.pitch).clamp(-1.4, 1.4);
         }
         let pointer_local = response.hover_pos().map(|position| {
@@ -429,8 +429,8 @@ impl EditorApp {
 
         let wind = self.editor.wind;
         self.system.set_wind(wind);
-        self.wind_offset[0] += wind[0] * delta_time * 0.5;
-        self.wind_offset[1] -= wind[1] * delta_time * 0.5;
+        self.wind_offset[0] = (wind[0] * delta_time).mul_add(0.5, self.wind_offset[0]);
+        self.wind_offset[1] = (wind[1] * delta_time).mul_add(-0.5, self.wind_offset[1]);
         let effective = [
             motion_velocity[0] - wind[0],
             motion_velocity[1] - wind[1],
@@ -541,7 +541,7 @@ impl EditorApp {
                 let mut next = self.follow_pos;
                 let mut velocity = [0.0; 3];
                 for axis in 0..3 {
-                    next[axis] += (target[axis] - next[axis]) * alpha;
+                    next[axis] = (target[axis] - next[axis]).mul_add(alpha, next[axis]);
                     if delta_time > 1e-5 {
                         velocity[axis] = (next[axis] - self.follow_pos[axis]) / delta_time;
                     }

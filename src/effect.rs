@@ -645,13 +645,14 @@ impl Emitter {
                 }
             }
             if effect.rate > 0.0 {
-                self.spawn_accumulator += effect.rate * delta_time;
+                self.spawn_accumulator = effect.rate.mul_add(delta_time, self.spawn_accumulator);
                 for _ in 0..drain(&mut self.spawn_accumulator, effect.max_particles) {
                     self.spawn(effect, origin);
                 }
             }
             if effect.rate_distance > 0.0 {
-                self.distance_accumulator += effect.rate_distance * length(velocity) * delta_time;
+                self.distance_accumulator = (effect.rate_distance * length(velocity))
+                    .mul_add(delta_time, self.distance_accumulator);
                 for _ in 0..drain(&mut self.distance_accumulator, effect.max_particles) {
                     self.spawn(effect, origin);
                 }
@@ -673,7 +674,7 @@ impl Emitter {
             particle.velocity += (effect.gravity + wind) * delta_time;
             particle.velocity *= drag;
             particle.position += particle.velocity * delta_time;
-            particle.rotation += particle.spin * delta_time;
+            particle.rotation = particle.spin.mul_add(delta_time, particle.rotation);
             index += 1;
         }
     }
