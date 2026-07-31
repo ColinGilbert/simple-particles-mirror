@@ -17,7 +17,7 @@ pub fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
     }
     editor_panels::left(root, "controls")
         .default_size(280.0)
-        .show_inside(root, |ui| {
+        .show(root, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 changed |= file_section(ui, editor);
                 changed |= parameter_section(ui, editor);
