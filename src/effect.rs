@@ -343,6 +343,19 @@ impl std::fmt::Display for Gradient {
     }
 }
 
+#[cfg(feature = "document")]
+impl document_state::FileFormat for ParticleEffect {
+    type Error = std::convert::Infallible;
+
+    fn load(bytes: &[u8], _path: Option<&Path>) -> Result<Self, Self::Error> {
+        Ok(Self::parse(str::from_utf8(bytes).unwrap_or_default()))
+    }
+
+    fn store(&self) -> Vec<u8> {
+        self.to_string().into_bytes()
+    }
+}
+
 impl std::fmt::Display for ParticleEffect {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let blend = match self.blend {

@@ -1,9 +1,7 @@
-use std::convert::Infallible;
-use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use document_state::{DiskChange, Document, FileFormat};
+use document_state::{DiskChange, Document};
 use ga3::Vector;
 use matrix4::Matrix4;
 
@@ -84,36 +82,6 @@ impl PreviewMotion {
     }
 }
 
-#[derive(Clone)]
-struct Effect(ParticleEffect);
-
-impl Deref for Effect {
-    type Target = ParticleEffect;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for Effect {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl FileFormat for Effect {
-    type Error = Infallible;
-
-    fn load(bytes: &[u8], _path: Option<&Path>) -> Result<Self, Self::Error> {
-        let content = std::str::from_utf8(bytes).unwrap_or_default();
-        Ok(Self(ParticleEffect::parse(content)))
-    }
-
-    fn store(&self) -> Vec<u8> {
-        self.0.to_string().into_bytes()
-    }
-}
-
 pub struct Editor {
     pub motion_mode: PreviewMotion,
     pub path_speed: f32,
@@ -126,7 +94,7 @@ pub struct Editor {
     pub show_axes: bool,
     pub yaw: f32,
     pub pitch: f32,
-    document: Document<Effect>,
+    document: Document<ParticleEffect>,
     needs_register: bool,
 }
 
@@ -160,16 +128,16 @@ impl Editor {
             show_axes: true,
             yaw: PREVIEW_DEFAULT_YAW,
             pitch: PREVIEW_DEFAULT_PITCH,
-            document: Document::new(Effect(effect)),
+            document: Document::new(effect),
             needs_register: false,
         }
     }
 
-    pub fn effect(&self) -> &ParticleEffect {
+    pub const fn effect(&self) -> &ParticleEffect {
         self.document.data()
     }
 
-    pub fn effect_mut(&mut self) -> &mut ParticleEffect {
+    pub const fn effect_mut(&mut self) -> &mut ParticleEffect {
         self.document.data_mut()
     }
 

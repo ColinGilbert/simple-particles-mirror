@@ -9,7 +9,7 @@ readme = "../README.md"
 publish = false
 
 [dependencies]
-simple-particles = { path = "..", version = "0.3.1", features = ["render"] }
+simple-particles = { path = "..", version = "0.3.1", features = ["render", "document"] }
 wgpu = "29"
 bytemuck = { version = "1", features = ["derive"] }
 winit = "0.30"
@@ -20,7 +20,7 @@ pollster = "0.4"
 matrix4 = { git = "https://gitlab.com/porky11/matrix4" }
 ga3 = "0.3"
 editor-panels = { git = "https://gitlab.com/porky11/editor-panels" }
-document-state = { git = "https://gitlab.com/porky11/document-state" }
+document-state = "0.1"
 
 [[bin]]
 name = "particle-editor"

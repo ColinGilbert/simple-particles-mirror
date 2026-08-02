@@ -11,6 +11,9 @@ Three layers, so you only pull in what you use:
   that pools live emitters.
 - **`render`** (feature): a `ParticleRenderer` with instanced billboard quads and
   alpha/additive blend pipelines.
+- **`document`** (feature): a `document_state::FileFormat` implementation for
+  `ParticleEffect`, so an editor can drive it through a `Document` with undo,
+  dirty tracking and atomic saves.
 - **`simple-particles-editor`** (separate crate in this repo): the live editor, so
   the library itself never pulls in a UI stack. Runs as the standalone
   `particle-editor` binary, or embeds into a host window as an `editor-panels`
