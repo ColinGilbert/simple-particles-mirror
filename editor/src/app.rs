@@ -715,6 +715,10 @@ impl editor_panels::Panel for Main<'_> {
     fn ui(&mut self, ui: &mut egui::Ui) {
         self.app.editor_ui(ui);
     }
+
+    fn domain(&self) -> editor_panels::Domain {
+        editor_panels::Domain::Space
+    }
 }
 
 #[must_use]
