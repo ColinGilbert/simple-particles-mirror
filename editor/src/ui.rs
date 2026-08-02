@@ -1,4 +1,4 @@
-use crate::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
+use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
 
 use super::app::{Editor, PREVIEW_DEFAULT_PITCH, PREVIEW_DEFAULT_YAW, PreviewMotion};
 use super::locale::{self, Language, t};

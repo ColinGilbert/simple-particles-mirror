@@ -1,3 +1,6 @@
+[workspace]
+members = ["editor"]
+
 [package]
 name = "simple-particles"
 version = "0.3.1"
@@ -14,37 +17,10 @@ simple-vectors = "0.3.1"
 header-parsing = "0.3.1"
 wgpu = { version = "29", optional = true }
 bytemuck = { version = "1", optional = true, features = ["derive"] }
-winit = { version = "0.30", optional = true }
-egui = { version = "0.35", optional = true }
-egui-winit = { version = "0.35", optional = true }
-egui-wgpu = { version = "0.35", optional = true }
-pollster = { version = "0.4", optional = true }
-raw-window-handle = { version = "0.6", optional = true }
-matrix4 = { git = "https://gitlab.com/porky11/matrix4", optional = true }
-ga3 = { version = "0.3", optional = true }
-editor-panels = { git = "https://gitlab.com/porky11/editor-panels", optional = true }
-document-state = { git = "https://gitlab.com/porky11/document-state", optional = true }
 
 [features]
 default = []
 render = ["dep:wgpu", "dep:bytemuck"]
-editor = [
-    "render",
-    "dep:winit",
-    "dep:egui",
-    "dep:egui-winit",
-    "dep:egui-wgpu",
-    "dep:pollster",
-    "dep:raw-window-handle",
-    "dep:matrix4",
-    "dep:ga3",
-    "dep:editor-panels",
-    "dep:document-state",
-]
-
-[[bin]]
-name = "particle-editor"
-required-features = ["editor"]
 
 [lints.rust]
 warnings = { level = "deny", priority = -2 }
@@ -58,3 +34,6 @@ cast_precision_loss = "allow"
 cast_possible_truncation = "allow"
 cast_sign_loss = "allow"
 cast_possible_wrap = "allow"
+
+[patch.crates-io]
+egui_tiles = { git = "https://github.com/porky11/egui_tiles", branch = "wrapping-tab-bar" }

@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -6,9 +7,9 @@ use document_state::{DiskChange, Document, FileFormat};
 use ga3::Vector;
 use matrix4::Matrix4;
 
-use crate::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
-use crate::render::ParticleRenderer;
-use crate::{EmitterId, ParticleSystem};
+use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
+use simple_particles::render::ParticleRenderer;
+use simple_particles::{EmitterId, ParticleSystem};
 
 use super::axes::AxisRenderer;
 use super::locale::t;
@@ -83,16 +84,33 @@ impl PreviewMotion {
     }
 }
 
-impl FileFormat for ParticleEffect {
+#[derive(Clone)]
+struct Effect(ParticleEffect);
+
+impl Deref for Effect {
+    type Target = ParticleEffect;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Effect {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl FileFormat for Effect {
     type Error = Infallible;
 
     fn load(bytes: &[u8], _path: Option<&Path>) -> Result<Self, Self::Error> {
-        let content = std::str::from_utf8(bytes).unwrap_or("");
-        Ok(Self::parse(content))
+        let content = std::str::from_utf8(bytes).unwrap_or_default();
+        Ok(Self(ParticleEffect::parse(content)))
     }
 
     fn store(&self) -> Vec<u8> {
-        self.to_string().into_bytes()
+        self.0.to_string().into_bytes()
     }
 }
 
@@ -108,7 +126,7 @@ pub struct Editor {
     pub show_axes: bool,
     pub yaw: f32,
     pub pitch: f32,
-    document: Document<ParticleEffect>,
+    document: Document<Effect>,
     needs_register: bool,
 }
 
@@ -142,16 +160,16 @@ impl Editor {
             show_axes: true,
             yaw: PREVIEW_DEFAULT_YAW,
             pitch: PREVIEW_DEFAULT_PITCH,
-            document: Document::new(effect),
+            document: Document::new(Effect(effect)),
             needs_register: false,
         }
     }
 
-    pub const fn effect(&self) -> &ParticleEffect {
+    pub fn effect(&self) -> &ParticleEffect {
         self.document.data()
     }
 
-    pub const fn effect_mut(&mut self) -> &mut ParticleEffect {
+    pub fn effect_mut(&mut self) -> &mut ParticleEffect {
         self.document.data_mut()
     }
 
@@ -291,6 +309,12 @@ fn pointer_world(pointer: [f32; 2], size: [u32; 2]) -> [f32; 3] {
     ]
 }
 
+/// A particle editor bound to a host's GPU device.
+///
+/// Holds the edited effect, the live preview system and the renderers. It owns
+/// no window and no surface: the preview draws into an offscreen texture that is
+/// blitted into whatever [`egui`] pass [`EditorApp::editor_ui`] is called from,
+/// so the same app serves the standalone window and an embedded panel.
 pub struct EditorApp {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -311,6 +335,10 @@ pub struct EditorApp {
 
 impl EditorApp {
     #[must_use]
+    /// Builds an editor on the caller's device, starting from a default effect.
+    ///
+    /// `format` is the texture format the host's egui pass renders to; the
+    /// offscreen preview target and the blit pipeline are built to match it.
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         let mut renderer = ParticleRenderer::new(device, queue, format, None);
         let (grid_pixels, grid_width, grid_height) = textures::grid_sheet();
@@ -344,6 +372,12 @@ impl EditorApp {
     }
 
     #[expect(clippy::needless_pass_by_value)]
+    /// Loads an effect file into this editor, replacing what it held.
+    ///
+    /// Mutates the existing app rather than building a new one, so a host can
+    /// route repeated clicks to one long-lived tab. A file that cannot be read
+    /// or parsed leaves the current effect in place and only sets the status
+    /// line.
     pub fn open(&mut self, path: PathBuf) {
         self.editor.path = path.display().to_string();
         match Document::open(&path) {
@@ -358,6 +392,11 @@ impl EditorApp {
         }
     }
 
+    /// Draws the controls and the live preview into `ui`, and steps the
+    /// simulation by the time since the last call.
+    ///
+    /// Call once per frame. Prefer [`main_panel`] when embedding, which wraps
+    /// this in an [`editor_panels::Panel`].
     pub fn editor_ui(&mut self, ui: &mut egui::Ui) {
         if matches!(self.editor.document.poll(), Some(DiskChange::Reloaded)) {
             self.editor.needs_register = true;
@@ -371,6 +410,11 @@ impl EditorApp {
         self.viewport_ui(ui);
     }
 
+    /// Writes the effect to `path` and adopts it, returning whether it worked.
+    ///
+    /// Opens no dialog and never blocks, so a host can call it from a Ctrl+S
+    /// handler on its own event loop. Picking the path is the host's job:
+    /// [`EditorApp::path`] says whether there already is one.
     pub fn save(&mut self, path: &Path) -> bool {
         match self.editor.document.save_as(path) {
             Ok(()) => {
@@ -386,11 +430,18 @@ impl EditorApp {
     }
 
     #[must_use]
+    /// Where the effect was last opened from or saved to, if anywhere.
+    ///
+    /// [`None`] for a document that has never been persisted, which is the
+    /// host's cue to ask for a path before calling [`EditorApp::save`].
     pub fn path(&self) -> Option<&Path> {
         self.editor.document.path()
     }
 
     #[must_use]
+    /// Whether the effect differs from what was last saved.
+    ///
+    /// For starring a tab title or guarding a close.
     pub const fn is_modified(&self) -> bool {
         self.editor.document.is_modified()
     }
@@ -641,11 +692,17 @@ impl EditorApp {
 }
 
 #[must_use]
+/// Whether this editor can open `path`, which it can for `.particle` files.
+///
+/// For a host deciding which tool a clicked file belongs to.
 pub fn handles(path: &Path) -> bool {
     path.extension()
         .is_some_and(|extension| extension == "particle")
 }
 
+/// The editor as one panel: controls column and 3D preview together.
+///
+/// Built by [`main_panel`].
 pub struct Main<'a> {
     app: &'a mut EditorApp,
 }
@@ -661,6 +718,7 @@ impl editor_panels::Panel for Main<'_> {
 }
 
 #[must_use]
+/// Borrows `app` as a panel a host can dock.
 pub const fn main_panel(app: &mut EditorApp) -> Main<'_> {
     Main { app }
 }

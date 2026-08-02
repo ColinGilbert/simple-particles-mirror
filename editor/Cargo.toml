@@ -1,0 +1,40 @@
+[package]
+name = "simple-particles-editor"
+version = "0.3.1"
+edition = "2024"
+description = "Graphical editor for simple-particles effects, standalone or embedded as an editor-panels panel"
+license = "MIT OR Apache-2.0"
+repository = "https://gitlab.com/porky11/simple-particles"
+readme = "../README.md"
+publish = false
+
+[dependencies]
+simple-particles = { path = "..", version = "0.3.1", features = ["render"] }
+wgpu = "29"
+bytemuck = { version = "1", features = ["derive"] }
+winit = "0.30"
+egui = "0.35"
+egui-winit = "0.35"
+egui-wgpu = "0.35"
+pollster = "0.4"
+matrix4 = { git = "https://gitlab.com/porky11/matrix4" }
+ga3 = "0.3"
+editor-panels = { git = "https://gitlab.com/porky11/editor-panels" }
+document-state = { git = "https://gitlab.com/porky11/document-state" }
+
+[[bin]]
+name = "particle-editor"
+path = "src/main.rs"
+
+[lints.rust]
+warnings = { level = "deny", priority = -2 }
+
+[lints.clippy]
+nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+expect_used = "deny"
+unwrap_used = "deny"
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"

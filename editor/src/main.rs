@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use egui_wgpu::ScreenDescriptor;
-use simple_particles::editor::EditorApp;
+use simple_particles_editor::EditorApp;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};

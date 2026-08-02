@@ -4,14 +4,17 @@ A data-driven CPU particle system with an optional [wgpu](https://wgpu.rs) rende
 and a live [egui](https://github.com/emilk/egui) editor. Built for small games that
 need tunable visual effects without the complexity of GPU compute particles.
 
-Three layers, each behind a feature so you only pull in what you use:
+Three layers, so you only pull in what you use:
 
 - **engine** (default, no rendering dependencies): the `.particle` format parser,
   animation curves and color gradients, the CPU simulation, and a `ParticleSystem`
   that pools live emitters.
-- **`render`**: a `ParticleRenderer` with instanced billboard quads and alpha/additive
-  blend pipelines.
-- **`editor`**: a standalone `particle-editor` binary for tuning effects live.
+- **`render`** (feature): a `ParticleRenderer` with instanced billboard quads and
+  alpha/additive blend pipelines.
+- **`simple-particles-editor`** (separate crate in this repo): the live editor, so
+  the library itself never pulls in a UI stack. Runs as the standalone
+  `particle-editor` binary, or embeds into a host window as an `editor-panels`
+  panel.
 
 ## The `.particle` format
 
@@ -133,7 +136,7 @@ sort the keys and never leave the set empty.
 ## Editor
 
 ```sh
-cargo run --features editor -- [optional/path.particle]
+cargo run -p simple-particles-editor -- [optional/path.particle]
 ```
 
 Drag the preview to orbit (with a Blender-style axis gizmo for orientation), or pick a
