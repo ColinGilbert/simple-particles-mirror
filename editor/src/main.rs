@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use egui_wgpu::ScreenDescriptor;
-use simple_particles_editor::EditorApp;
+use simple_particles_editor::{EditorApp, configure_style};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -190,6 +190,7 @@ struct EguiOverlay {
 impl EguiOverlay {
     fn new(device: &wgpu::Device, format: wgpu::TextureFormat, window: &Window) -> Self {
         let context = egui::Context::default();
+        configure_style(&context);
         let winit_state = egui_winit::State::new(
             context.clone(),
             egui::ViewportId::ROOT,
