@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-use std::path::Path;
-use std::time::SystemTime;
+use std::{collections::HashMap, path::Path, time::SystemTime};
 
 use header_parsing::parse_header;
 use simple_vectors::Vector;
