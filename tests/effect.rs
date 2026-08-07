@@ -193,3 +193,55 @@ fn absurd_rate_stays_bounded_by_max_particles() {
     let draws = system.collect();
     assert_eq!(draws[0].instances.len(), 32);
 }
+
+fn tint_system() -> ParticleSystem {
+    let mut system = ParticleSystem::new();
+    system.register(
+        "white",
+        ParticleEffect::parse(
+            "max_particles 4\n\n# emit\nburst 1\nrate 0\n\n# life\nlifetime 5 5\n\n# color\ngradient 0:#ffffffff 1:#ffffff00\n",
+        ),
+    );
+    system
+}
+
+#[test]
+fn a_tint_multiplies_the_gradient() {
+    let mut system = tint_system();
+    system.spawn_tinted("white", [0.0, 0.0, 0.0], [1.0, 0.5, 0.0, 1.0]);
+    system.update(0.01);
+
+    let draws = system.collect();
+    let color = draws[0].instances[0].color;
+    assert!((color[0] - 1.0).abs() < 1e-3);
+    assert!((color[1] - 0.5).abs() < 1e-3);
+    assert!(color[2].abs() < 1e-3);
+    assert!(color[3] > 0.9);
+}
+
+#[test]
+fn a_tint_set_later_reaches_live_particles() {
+    let mut system = tint_system();
+    let id = system.spawn("white", [0.0, 0.0, 0.0]);
+    system.update(0.01);
+    assert!((system.collect()[0].instances[0].color[1] - 1.0).abs() < 1e-3);
+
+    system.set_emitter_tint(id, [1.0, 0.0, 0.0, 1.0]);
+    let color = system.collect()[0].instances[0].color;
+    assert!((color[0] - 1.0).abs() < 1e-3);
+    assert!(color[1].abs() < 1e-3);
+}
+
+#[test]
+fn a_tint_keeps_the_gradient_fade() {
+    let mut system = tint_system();
+    system.spawn_tinted("white", [0.0, 0.0, 0.0], [0.5, 0.5, 0.5, 1.0]);
+    system.update(0.01);
+    let early = system.collect()[0].instances[0].color;
+    system.update(4.0);
+    let late = system.collect()[0].instances[0].color;
+
+    assert!((early[0] - 0.5).abs() < 1e-3);
+    assert!((late[0] - 0.5).abs() < 1e-3);
+    assert!(late[3] < early[3] * 0.5);
+}

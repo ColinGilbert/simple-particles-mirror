@@ -622,6 +622,7 @@ pub struct Emitter {
     distance_accumulator: f32,
     age: f32,
     emitting: bool,
+    tint: [f32; 4],
     rng: Rng,
 }
 
@@ -634,8 +635,18 @@ impl Emitter {
             distance_accumulator: 0.0,
             age: 0.0,
             emitting: true,
+            tint: [1.0; 4],
             rng: Rng::new(seed),
         }
+    }
+
+    pub const fn set_tint(&mut self, tint: [f32; 4]) {
+        self.tint = tint;
+    }
+
+    #[must_use]
+    pub const fn tint(&self) -> [f32; 4] {
+        self.tint
     }
 
     #[must_use]
@@ -780,9 +791,13 @@ impl Emitter {
     pub fn render_into(&self, effect: &ParticleEffect, out: &mut Vec<ParticleRender>) {
         for particle in &self.particles {
             let life = (particle.age / particle.lifetime).clamp(0.0, 1.0);
+            let mut color = effect.color.sample(life);
+            for (channel, factor) in color.iter_mut().zip(self.tint) {
+                *channel *= factor;
+            }
             out.push(ParticleRender {
                 position: particle.position.into(),
-                color: effect.color.sample(life),
+                color,
                 size: effect.size.sample(life),
                 rotation: particle.rotation,
                 life,
@@ -844,6 +859,10 @@ impl ParticleSystem {
     }
 
     pub fn spawn(&mut self, name: &str, origin: [f32; 3]) -> EmitterId {
+        self.spawn_tinted(name, origin, [1.0; 4])
+    }
+
+    pub fn spawn_tinted(&mut self, name: &str, origin: [f32; 3], tint: [f32; 4]) -> EmitterId {
         let id = EmitterId(self.next_id);
         self.next_id += 1;
         if !self.effects.contains_key(name) {
@@ -853,10 +872,12 @@ impl ParticleSystem {
             .next_seed
             .wrapping_mul(1_664_525)
             .wrapping_add(1_013_904_223);
+        let mut emitter = Emitter::new(self.next_seed);
+        emitter.set_tint(tint);
         self.emitters.push(ActiveEmitter {
             id,
             effect: name.to_string(),
-            emitter: Emitter::new(self.next_seed),
+            emitter,
             origin: Vec3::from(origin),
             velocity: Vec3::default(),
         });
@@ -867,6 +888,12 @@ impl ParticleSystem {
         if let Some(active) = self.emitters.iter_mut().find(|active| active.id == id) {
             active.origin = Vec3::from(origin);
             active.velocity = Vec3::from(velocity);
+        }
+    }
+
+    pub fn set_emitter_tint(&mut self, id: EmitterId, tint: [f32; 4]) {
+        if let Some(active) = self.emitters.iter_mut().find(|active| active.id == id) {
+            active.emitter.set_tint(tint);
         }
     }
 

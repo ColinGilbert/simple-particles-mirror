@@ -130,6 +130,21 @@ if let Some(effect) = ParticleEffect::reload_if_changed(path, &mut last_modified
 }
 ```
 
+### Per-emitter tint
+
+One effect file can serve many colors. A tint multiplies the gradient channel by
+channel, so the shape of the fade stays what the file says and only the hue moves —
+a white gradient yields the tint color itself:
+
+```rust
+let id = system.spawn_tinted("trail", origin, [1.0, 0.4, 0.1, 1.0]);
+system.set_emitter_tint(id, [0.2, 0.6, 1.0, 1.0]);
+```
+
+`set_emitter_tint` takes effect on the particles already alive, so a projectile can
+change color mid-flight. Use it where the color carries information — which projectile is flying, which
+material just broke — instead of writing one `.particle` file per color.
+
 ### Curves and gradients
 
 `Curve` and `Gradient` hold arbitrarily many keys, not just endpoints. Read them with
