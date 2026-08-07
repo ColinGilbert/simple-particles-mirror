@@ -1,6 +1,6 @@
 [package]
 name = "simple-particles-editor"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 description = "Graphical editor for simple-particles effects, standalone or embedded as an editor-panels panel"
 license = "MIT OR Apache-2.0"
@@ -9,7 +9,7 @@ readme = "../README.md"
 publish = false
 
 [dependencies]
-simple-particles = { path = "..", version = "0.3.1", features = ["render", "document"] }
+simple-particles = { path = "..", version = "0.3.2", features = ["render", "document"] }
 wgpu = "29"
 bytemuck = { version = "1", features = ["derive"] }
 winit = "0.30"

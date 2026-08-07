@@ -24,7 +24,7 @@ cast_possible_wrap = "allow"
 
 [package]
 name = "simple-particles"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 description = "Data-driven CPU particle system with a wgpu renderer and an egui live editor"
 license = "MIT OR Apache-2.0"
