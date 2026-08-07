@@ -113,7 +113,8 @@ impl State {
             .iter()
             .copied()
             .find(wgpu::TextureFormat::is_srgb)
-            .unwrap_or(caps.formats[0]);
+            .or_else(|| caps.formats.first().copied())
+            .ok_or_else(|| "the surface offers no texture format".to_string())?;
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -121,7 +122,11 @@ impl State {
             height: size.height.max(1),
             present_mode: wgpu::PresentMode::Fifo,
             desired_maximum_frame_latency: 2,
-            alpha_mode: caps.alpha_modes[0],
+            alpha_mode: caps
+                .alpha_modes
+                .first()
+                .copied()
+                .unwrap_or(wgpu::CompositeAlphaMode::Auto),
             view_formats: vec![],
         };
         surface.configure(&device, &config);

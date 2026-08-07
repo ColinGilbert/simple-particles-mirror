@@ -91,17 +91,21 @@ impl Curve {
 
     #[must_use]
     pub fn sample(&self, time: f32) -> f32 {
-        let &[first_time, first_value] = &self.keys[0];
+        let (Some(&[first_time, first_value]), Some(&[last_time, last_value])) =
+            (self.keys.first(), self.keys.last())
+        else {
+            return 1.0;
+        };
         if time <= first_time {
             return first_value;
         }
-        let &[last_time, last_value] = &self.keys[self.keys.len() - 1];
         if time >= last_time {
             return last_value;
         }
         for window in self.keys.windows(2) {
-            let &[left_time, left_value] = &window[0];
-            let &[right_time, right_value] = &window[1];
+            let &[[left_time, left_value], [right_time, right_value]] = window else {
+                continue;
+            };
             if time <= right_time {
                 let span = right_time - left_time;
                 let blend = if span > 1e-6 {
@@ -168,17 +172,21 @@ impl Gradient {
 
     #[must_use]
     pub fn sample(&self, time: f32) -> [f32; 4] {
-        let (first_time, first_color) = self.keys[0];
+        let (Some(&(first_time, first_color)), Some(&(last_time, last_color))) =
+            (self.keys.first(), self.keys.last())
+        else {
+            return [1.0; 4];
+        };
         if time <= first_time {
             return first_color;
         }
-        let (last_time, last_color) = self.keys[self.keys.len() - 1];
         if time >= last_time {
             return last_color;
         }
         for window in self.keys.windows(2) {
-            let (left_time, left_color) = window[0];
-            let (right_time, right_color) = window[1];
+            let &[(left_time, left_color), (right_time, right_color)] = window else {
+                continue;
+            };
             if time <= right_time {
                 let span = right_time - left_time;
                 let blend = if span > 1e-6 {
@@ -187,9 +195,9 @@ impl Gradient {
                     0.0
                 };
                 let mut result = [0.0; 4];
-                for channel in 0..4 {
-                    result[channel] = (right_color[channel] - left_color[channel])
-                        .mul_add(blend, left_color[channel]);
+                let channels = left_color.into_iter().zip(right_color);
+                for (slot, (left, right)) in result.iter_mut().zip(channels) {
+                    *slot = (right - left).mul_add(blend, left);
                 }
                 return result;
             }
@@ -203,7 +211,8 @@ fn parse_hex_color(text: &str) -> Option<[f32; 4]> {
     if hex.len() != 6 && hex.len() != 8 {
         return None;
     }
-    let component = |start: usize| u8::from_str_radix(&hex[start..start + 2], 16).ok();
+    let component =
+        |start: usize| -> Option<u8> { u8::from_str_radix(hex.get(start..start + 2)?, 16).ok() };
     let red = component(0)?;
     let green = component(2)?;
     let blue = component(4)?;
@@ -675,8 +684,7 @@ impl Emitter {
 
         let drag = (effect.drag.mul_add(-delta_time, 1.0)).max(0.0);
         let mut index = 0;
-        while index < self.particles.len() {
-            let particle = &mut self.particles[index];
+        while let Some(particle) = self.particles.get_mut(index) {
             particle.age += delta_time;
             if particle.age >= particle.lifetime {
                 self.particles.swap_remove(index);

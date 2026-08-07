@@ -558,10 +558,13 @@ impl EditorApp {
                 let alpha = (delta_time / self.editor.follow_delay.max(0.01)).min(1.0);
                 let mut next = self.follow_pos;
                 let mut velocity = [0.0; 3];
-                for axis in 0..3 {
-                    next[axis] = (target[axis] - next[axis]).mul_add(alpha, next[axis]);
+                let axes = target.into_iter().zip(self.follow_pos);
+                for ((position, speed), (goal, previous)) in
+                    next.iter_mut().zip(&mut velocity).zip(axes)
+                {
+                    *position = (goal - *position).mul_add(alpha, *position);
                     if delta_time > 1e-5 {
-                        velocity[axis] = (next[axis] - self.follow_pos[axis]) / delta_time;
+                        *speed = (*position - previous) / delta_time;
                     }
                 }
                 self.follow_pos = next;

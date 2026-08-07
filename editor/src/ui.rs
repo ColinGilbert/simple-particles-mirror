@@ -386,9 +386,12 @@ fn emission_fields(ui: &mut egui::Ui, effect: &mut ParticleEffect) -> bool {
         .changed();
     let mut gravity: [f32; 3] = effect.gravity.into();
     let mut gravity_changed = false;
-    for (axis, key) in ["gravity_x", "gravity_y", "gravity_z"].iter().enumerate() {
+    for (axis, key) in gravity
+        .iter_mut()
+        .zip(["gravity_x", "gravity_y", "gravity_z"])
+    {
         gravity_changed |= ui
-            .add(egui::Slider::new(&mut gravity[axis], -20.0..=20.0).text(t(key)))
+            .add(egui::Slider::new(axis, -20.0..=20.0).text(t(key)))
             .changed();
     }
     if gravity_changed {

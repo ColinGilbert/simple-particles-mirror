@@ -1,5 +1,3 @@
-#![expect(clippy::unwrap_used)]
-
 use std::fs::write;
 
 use simple_particles::ParticleEffect;

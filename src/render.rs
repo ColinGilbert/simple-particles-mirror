@@ -500,18 +500,12 @@ fn create_circle_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::Te
     let size = 64_u32;
     let center = size as f32 / 2.0;
     let mut pixels = vec![0u8; (size * size * 4) as usize];
-    for y in 0..size {
-        for x in 0..size {
-            let dx = x as f32 + 0.5 - center;
-            let dy = y as f32 + 0.5 - center;
-            let distance = dx.hypot(dy) / center;
-            let alpha = (1.0 - distance).clamp(0.0, 1.0);
-            let offset = ((y * size + x) * 4) as usize;
-            pixels[offset] = 255;
-            pixels[offset + 1] = 255;
-            pixels[offset + 2] = 255;
-            pixels[offset + 3] = (alpha * alpha * 255.0) as u8;
-        }
+    for (index, pixel) in pixels.chunks_exact_mut(4).enumerate() {
+        let dx = (index as u32 % size) as f32 + 0.5 - center;
+        let dy = (index as u32 / size) as f32 + 0.5 - center;
+        let distance = dx.hypot(dy) / center;
+        let alpha = (1.0 - distance).clamp(0.0, 1.0);
+        pixel.copy_from_slice(&[255, 255, 255, (alpha * alpha * 255.0) as u8]);
     }
     device.create_texture_with_data(
         queue,

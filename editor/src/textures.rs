@@ -21,10 +21,15 @@ pub fn grid_sheet() -> (Vec<u8>, u32, u32) {
                     let pixel_x = column * CELL + x;
                     let pixel_y = row * CELL + y;
                     let offset = ((pixel_y * width + pixel_x) * 4) as usize;
-                    pixels[offset] = (red * 255.0) as u8;
-                    pixels[offset + 1] = (green * 255.0) as u8;
-                    pixels[offset + 2] = (blue * 255.0) as u8;
-                    pixels[offset + 3] = (alpha * 255.0) as u8;
+                    let Some(pixel) = pixels.get_mut(offset..offset + 4) else {
+                        continue;
+                    };
+                    pixel.copy_from_slice(&[
+                        (red * 255.0) as u8,
+                        (green * 255.0) as u8,
+                        (blue * 255.0) as u8,
+                        (alpha * 255.0) as u8,
+                    ]);
                 }
             }
         }

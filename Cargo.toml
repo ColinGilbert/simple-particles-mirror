@@ -1,6 +1,27 @@
 [workspace]
 members = ["editor"]
 
+[workspace.lints.rust]
+warnings = { level = "deny", priority = -2 }
+
+[workspace.lints.clippy]
+nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+expect_used = "deny"
+unwrap_used = "deny"
+indexing_slicing = "deny"
+string_slice = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+exit = "deny"
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+
 [package]
 name = "simple-particles"
 version = "0.3.1"
@@ -24,18 +45,8 @@ default = []
 render = ["dep:wgpu", "dep:bytemuck"]
 document = ["dep:document-state"]
 
-[lints.rust]
-warnings = { level = "deny", priority = -2 }
-
-[lints.clippy]
-nursery = { level = "deny", priority = -1 }
-pedantic = { level = "deny", priority = -1 }
-expect_used = "deny"
-unwrap_used = "deny"
-cast_precision_loss = "allow"
-cast_possible_truncation = "allow"
-cast_sign_loss = "allow"
-cast_possible_wrap = "allow"
+[lints]
+workspace = true
 
 [patch.crates-io]
 egui_tiles = { git = "https://github.com/porky11/egui_tiles", branch = "wrapping-tab-bar" }
