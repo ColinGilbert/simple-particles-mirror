@@ -1,19 +1,18 @@
-use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::{
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
 use document_state::{DiskChange, Document};
 use ga3::Vector;
 use matrix4::Matrix4;
+use simple_particles::{
+    EmitterId, ParticleSystem,
+    effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect},
+    render::ParticleRenderer,
+};
 
-use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
-use simple_particles::render::ParticleRenderer;
-use simple_particles::{EmitterId, ParticleSystem};
-
-use super::axes::AxisRenderer;
-use super::locale::t;
-use super::textures;
-use super::ui::build_ui;
-use super::wind::WindRenderer;
+use super::{axes::AxisRenderer, locale::t, textures, ui::build_ui, wind::WindRenderer};
 
 pub const PREVIEW: &str = "preview";
 pub const PREVIEW_FOV: f32 = 45.0;

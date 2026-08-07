@@ -1,15 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::path::PathBuf;
-use std::process::ExitCode;
-use std::sync::Arc;
+use std::{path::PathBuf, process::ExitCode, sync::Arc};
 
 use egui_wgpu::ScreenDescriptor;
 use simple_particles_editor::{EditorApp, configure_style};
-use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::window::{Window, WindowId};
+use winit::{
+    application::ApplicationHandler,
+    event::WindowEvent,
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    window::{Window, WindowId},
+};
 
 fn main() -> ExitCode {
     let event_loop = match EventLoop::new() {

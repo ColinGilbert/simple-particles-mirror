@@ -1,7 +1,9 @@
 use simple_particles::effect::{BlendMode, Curve, EmitterShape, Gradient, ParticleEffect};
 
-use super::app::{Editor, PREVIEW_DEFAULT_PITCH, PREVIEW_DEFAULT_YAW, PreviewMotion};
-use super::locale::{self, Language, t};
+use super::{
+    app::{Editor, PREVIEW_DEFAULT_PITCH, PREVIEW_DEFAULT_YAW, PreviewMotion},
+    locale::{self, Language, t},
+};
 
 pub fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
     let mut changed = false;
