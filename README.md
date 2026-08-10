@@ -142,7 +142,11 @@ system.set_emitter_tint(id, [0.2, 0.6, 1.0, 1.0]);
 ```
 
 `set_emitter_tint` takes effect on the particles already alive, so a projectile can
-change color mid-flight. Use it where the color carries information — which projectile is flying, which
+change color mid-flight. `stop_emitter(id)` is the counterpart for ending a looping
+emitter: it stops the emission, lets the live particles run out their lifetime, and
+`update` drops the emitter once the last one is gone.
+
+Use the tint where the color carries information — which projectile is flying, which
 material just broke — instead of writing one `.particle` file per color.
 
 ### Curves and gradients

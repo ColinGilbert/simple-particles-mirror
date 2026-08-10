@@ -897,6 +897,12 @@ impl ParticleSystem {
         }
     }
 
+    pub fn stop_emitter(&mut self, id: EmitterId) {
+        if let Some(active) = self.emitters.iter_mut().find(|active| active.id == id) {
+            active.emitter.stop();
+        }
+    }
+
     pub fn update(&mut self, delta_time: f32) {
         let effects = &self.effects;
         let wind = self.wind;

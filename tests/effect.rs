@@ -194,6 +194,30 @@ fn absurd_rate_stays_bounded_by_max_particles() {
     assert_eq!(draws[0].instances.len(), 32);
 }
 
+#[test]
+fn a_stopped_emitter_lets_its_particles_finish_and_then_vanishes() {
+    let mut system = ParticleSystem::new();
+    system.register(
+        "trail",
+        ParticleEffect::parse(
+            "max_particles 64\nloop true\n\n# emit\nrate 60\n\n# life\nlifetime 0.5 0.5\n",
+        ),
+    );
+    let id = system.spawn("trail", [0.0, 0.0, 0.0]);
+    system.update(0.2);
+    let live = system.collect()[0].instances.len();
+    assert!(live > 0);
+
+    system.stop_emitter(id);
+    system.update(0.1);
+    assert!(system.collect()[0].instances.len() <= live);
+    assert!(!system.is_empty());
+
+    system.update(1.0);
+    assert!(system.is_empty());
+    assert!(system.collect().is_empty());
+}
+
 fn tint_system() -> ParticleSystem {
     let mut system = ParticleSystem::new();
     system.register(
