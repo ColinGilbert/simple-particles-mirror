@@ -594,7 +594,7 @@ impl Rng {
     fn direction(&mut self) -> Vec3 {
         let z = self.unit().mul_add(2.0, -1.0);
         let azimuth = self.unit() * std::f32::consts::TAU;
-        let radius = (1.0 - z * z).max(0.0).sqrt();
+        let radius = z.mul_add(-z, 1.0).max(0.0).sqrt();
         Vec3::from([radius * azimuth.cos(), z, radius * azimuth.sin()])
     }
 }

@@ -271,7 +271,7 @@ fn pointer_world(pointer: [f32; 2], size: [u32; 2]) -> [f32; 3] {
     let half_width = half_height * (width / height);
     [
         ndc_x * half_width,
-        PREVIEW_TARGET_Y - ndc_y * half_height,
+        ndc_y.mul_add(-half_height, PREVIEW_TARGET_Y),
         0.0,
     ]
 }
@@ -526,7 +526,7 @@ impl EditorApp {
         match self.editor.motion_mode {
             PreviewMotion::Static => ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
             PreviewMotion::Circle => {
-                self.motion_phase += omega * delta_time;
+                self.motion_phase = omega.mul_add(delta_time, self.motion_phase);
                 let (sin, cos) = self.motion_phase.sin_cos();
                 (
                     [cos * radius, 0.0, sin * radius],
@@ -534,12 +534,12 @@ impl EditorApp {
                 )
             }
             PreviewMotion::Line => {
-                self.motion_phase += omega * delta_time;
+                self.motion_phase = omega.mul_add(delta_time, self.motion_phase);
                 let (sin, cos) = self.motion_phase.sin_cos();
                 ([sin * radius, 0.0, 0.0], [cos * radius * omega, 0.0, 0.0])
             }
             PreviewMotion::Figure8 => {
-                self.motion_phase += omega * delta_time;
+                self.motion_phase = omega.mul_add(delta_time, self.motion_phase);
                 let (sin, cos) = self.motion_phase.sin_cos();
                 (
                     [sin * radius, 0.0, sin * cos * radius],

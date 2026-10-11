@@ -1,5 +1,3 @@
-#![expect(clippy::float_cmp)]
-
 use simple_particles::effect::{BlendMode, Emitter, EmitterShape, ParticleEffect, ParticleSystem};
 
 type Vec3 = simple_vectors::Vector<f32, 3>;
