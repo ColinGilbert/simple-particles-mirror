@@ -431,7 +431,7 @@ fn make_depth_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
             binding: 0,
             visibility: wgpu::ShaderStages::FRAGMENT,
             ty: wgpu::BindingType::Texture {
-                sample_type: wgpu::TextureSampleType::Depth,
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
                 view_dimension: wgpu::TextureViewDimension::D2,
                 multisampled: false,
             },
@@ -500,7 +500,7 @@ fn create_circle_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::Te
     let size = 64_u32;
     let center = size as f32 / 2.0;
     let mut pixels = vec![0u8; (size * size * 4) as usize];
-    for (index, pixel) in pixels.chunks_exact_mut(4).enumerate() {
+    for (index, pixel) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let dx = (index as u32 % size) as f32 + 0.5 - center;
         let dy = (index as u32 / size) as f32 + 0.5 - center;
         let distance = dx.hypot(dy) / center;

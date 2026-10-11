@@ -40,6 +40,9 @@ wgpu = { version = "29", optional = true }
 bytemuck = { version = "1", optional = true, features = ["derive"] }
 document-state = { version = "0.1", default-features = false, optional = true }
 
+[dev-dependencies]
+naga = { version = "29", features = ["wgsl-in", "glsl-out"] }
+
 [features]
 default = []
 render = ["dep:wgpu", "dep:bytemuck"]

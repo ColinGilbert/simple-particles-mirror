@@ -10,7 +10,7 @@ struct Camera {
 var<uniform> camera: Camera;
 
 @group(2) @binding(0)
-var scene_depth: texture_depth_2d;
+var scene_depth: texture_2d<f32>;
 
 fn view_distance(depth: f32) -> f32 {
     return camera.near * camera.far
@@ -94,7 +94,7 @@ fn fragment_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let texel = textureSample(particle_texture, particle_sampler, input.uv);
     var color = texel * input.color;
     if camera.soft_enabled > 0.5 {
-        let scene = textureLoad(scene_depth, vec2<i32>(input.clip_position.xy), 0);
+        let scene = textureLoad(scene_depth, vec2<i32>(input.clip_position.xy), 0).r;
         let gap = view_distance(scene) - view_distance(input.clip_position.z);
         color.a *= clamp(gap / camera.fade_distance, 0.0, 1.0);
     }
