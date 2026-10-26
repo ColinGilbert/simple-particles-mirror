@@ -1,6 +1,6 @@
-THIS CODE IS A MIRROR OF THE ORIGINAL BY FABI KRAPOHL, FOUND AT: [simple-particles](https://gitlab.com/porky11/simple-particles)
+THIS CODE IS A MIRROR OF THE ORIGINAL BY FABIO KRAPOHL, FOUND AT: [simple-particles](https://gitlab.com/porky11/simple-particles)
 
-I AM NOT THE AUTHOR.
+I AM NOT THE AUTHOR. DO NOT GIVE ME CREDIT FOR FABIO'S EXCELLENT WORK.
 
 # simple-particles
 
