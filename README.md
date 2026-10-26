@@ -1,3 +1,7 @@
+THIS CODE IS A MIRROR OF THE ORIGINAL BY FABI KRAPOHL, FOUND AT: [simple-particles](https://gitlab.com/porky11/simple-particles)
+
+I AM NOT THE AUTHOR.
+
 # simple-particles
 
 A data-driven CPU particle system with an optional [wgpu](https://wgpu.rs) renderer

@@ -8,7 +8,7 @@ use super::{
 pub fn build_ui(root: &mut egui::Ui, editor: &mut Editor) -> bool {
     let mut changed = false;
     if !editor.panel_open {
-        egui::Area::new(root.id().with("reopen"))
+        egui::Area::new(root.scope_id().with("reopen"))
             .fixed_pos(root.min_rect().min + egui::vec2(8.0, 8.0))
             .show(root.ctx(), |ui| {
                 if ui.button("☰").clicked() {

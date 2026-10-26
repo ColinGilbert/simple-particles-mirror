@@ -682,7 +682,7 @@ impl editor_panels::Panel for Main<'_> {
         "Particles".to_string()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
+    fn ui(&mut self, ui: &mut egui::ui::Ui) {
         self.app.editor_ui(ui);
     }
 

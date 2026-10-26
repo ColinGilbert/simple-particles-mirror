@@ -359,7 +359,7 @@ fn make_pipeline(
         vertex: wgpu::VertexState {
             module: shader,
             entry_point: Some("vertex_main"),
-            buffers: &[INSTANCE_LAYOUT],
+            buffers: &[Some(INSTANCE_LAYOUT)],
             compilation_options: wgpu::PipelineCompilationOptions::default(),
         },
         fragment: Some(wgpu::FragmentState {

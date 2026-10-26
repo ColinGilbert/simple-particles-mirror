@@ -10,13 +10,13 @@ publish = false
 
 [dependencies]
 simple-particles = { path = "..", version = "0.4.0", features = ["render", "document"] }
-wgpu = "29"
+wgpu = "30"
 bytemuck = { version = "1", features = ["derive"] }
 winit = "0.30"
-egui = "0.35"
-egui-winit = "0.35"
-egui-wgpu = "0.35"
-pollster = "0.4"
+egui = "0.37"
+egui-winit = "0.37"
+egui-wgpu = "0.37"
+pollster = "1.0"
 matrix4 = { git = "https://gitlab.com/porky11/matrix4" }
 ga3 = "0.3"
 editor-panels = { git = "https://gitlab.com/porky11/editor-panels" }

@@ -35,13 +35,13 @@ categories = ["game-development", "rendering"]
 
 [dependencies]
 simple-vectors = "0.5.2"
-header-parsing = "0.3.1"
-wgpu = { version = "29", optional = true }
+header-parsing = "0.3.2"
+wgpu = { version = "30", optional = true }
 bytemuck = { version = "1", optional = true, features = ["derive"] }
 document-state = { version = "0.1", default-features = false, optional = true }
 
 [dev-dependencies]
-naga = { version = "29", features = ["wgsl-in", "glsl-out"] }
+naga = { version = "30", features = ["wgsl-in", "glsl-out"] }
 
 [features]
 default = []
