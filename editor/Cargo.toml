@@ -19,7 +19,7 @@ egui-wgpu = "0.37"
 pollster = "1.0"
 matrix4 = { git = "https://gitlab.com/porky11/matrix4" }
 ga3 = "0.3"
-editor-panels = { git = "https://gitlab.com/porky11/editor-panels" }
+#editor-panels = { git = "https://gitlab.com/porky11/editor-panels" }
 document-state = "0.1"
 
 [[bin]]

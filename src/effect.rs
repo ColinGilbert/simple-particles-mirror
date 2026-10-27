@@ -824,6 +824,7 @@ struct ActiveEmitter {
     velocity: Vec3,
 }
 
+#[derive(Clone, Copy)]
 pub struct ParticleSystem {
     effects: HashMap<String, ParticleEffect>,
     emitters: Vec<ActiveEmitter>,

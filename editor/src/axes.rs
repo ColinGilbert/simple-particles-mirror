@@ -145,7 +145,7 @@ impl AxisRenderer {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vertex_main"),
-                buffers: &[wgpu::VertexBufferLayout {
+                buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<AxisInstance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -165,7 +165,7 @@ impl AxisRenderer {
                             format: wgpu::VertexFormat::Float32x3,
                         },
                     ],
-                }],
+                })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
